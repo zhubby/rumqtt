@@ -9,6 +9,7 @@ use tokio::select;
 use tokio::stream::{Stream, StreamExt};
 use tokio::time::{self, Delay, Elapsed, Instant};
 
+use crate::network::Io;
 use std::collections::VecDeque;
 use std::io;
 use std::time::Duration;
@@ -52,7 +53,7 @@ pub struct EventLoop {
     /// Pending packets from last session
     pub pending: IntoIter<Request>,
     /// Network connection to the broker
-    pub(crate) network: Option<Network>,
+    pub(crate) network: Option<Io>,
     /// Keep alive time
     pub(crate) keepalive_timeout: Option<Delay>,
     /// Handle to read cancellation requests
@@ -170,25 +171,25 @@ impl EventLoop {
         // instead of returning a None event, we try again.
         select! {
             // Pull a bunch of packets from network, reply in bunch and yield the first item
-            o = network.readb(&mut self.incoming) => {
+            o = network.i.readb(&mut self.incoming) => {
                 let incoming = o?;
 
                 // handle 1st incoming packet
                 if let Some(request) = self.state.handle_incoming_packet(&incoming)? {
-                    let outgoing = network.fill(request)?;
+                    let outgoing = network.o.fill(request)?;
                     self.outgoing.push_back(outgoing)
                 }
 
                 // be eager to handle more incoming packets
                 for incoming in self.incoming.iter() {
                     if let Some(request) = self.state.handle_incoming_packet(incoming)? {
-                        let outgoing = network.fill(request)?;
+                        let outgoing = network.o.fill(request)?;
                         self.outgoing.push_back(outgoing)
                     }
                 }
 
                 // flush all the acks and return first incoming packet
-                network.flush().await?;
+                network.o.flush().await?;
                 return Ok(Event::Incoming(incoming))
             },
             // Pull next request from user requests channel.
@@ -232,7 +233,7 @@ impl EventLoop {
             o = self.requests_rx.next(), if !inflight_full && !pending && !collision => match o {
                 Some(request) => {
                     let request = self.state.handle_outgoing_packet(request)?;
-                    let outgoing = network.fill(request)?;
+                    let outgoing = network.o.fill(request)?;
                     // During high load, pull more data from channel to batch more requests.
                     // Note: Make sure size of total inflight messages isn't greater than
                     // OS tcp write buffer size to prevent bounded buffer deadlocks
@@ -243,7 +244,7 @@ impl EventLoop {
                             Ok(r) => {
                                 // handle, send and buffer outgoing packet ids
                                 let request = self.state.handle_outgoing_packet(r)?;
-                                let outgoing = network.fill(request)?;
+                                let outgoing = network.o.fill(request)?;
                                 self.outgoing.push_back(outgoing);
                             }
                             Err(_) => break,
@@ -251,7 +252,7 @@ impl EventLoop {
 
                     }
 
-                    network.flush().await?;
+                    network.o.flush().await?;
                     return Ok(Event::Outgoing(outgoing))
                 }
                 None => return Err(ConnectionError::RequestsDone),
@@ -260,7 +261,7 @@ impl EventLoop {
             // this branch when done with all the pending packets
             Some(request) = next_pending(throttle, &mut self.pending), if pending => {
                 let request = self.state.handle_outgoing_packet(request)?;
-                let outgoing = network.write(request).await?;
+                let outgoing = network.o.write(request).await?;
                 return Ok(Event::Outgoing(outgoing));
             },
             // We generate pings irrespective of network activity. This keeps the ping logic
@@ -269,7 +270,7 @@ impl EventLoop {
                 let timeout = self.keepalive_timeout.as_mut().unwrap();
                 timeout.reset(Instant::now() + self.options.keep_alive);
                 let request = self.state.handle_outgoing_packet(Request::PingReq)?;
-                let outgoing = network.write(request).await?;
+                let outgoing = network.o.write(request).await?;
                 return Ok(Event::Outgoing(outgoing));
             }
             // cancellation requests to stop the polling
@@ -331,12 +332,12 @@ impl EventLoop {
     async fn network_connect(&mut self) -> Result<(), ConnectionError> {
         let network = if self.options.ca.is_some() || self.options.tls_client_config.is_some() {
             let socket = tls::tls_connect(&self.options).await?;
-            Network::new(socket, self.options.max_incoming_packet_size)
+            Io::new(socket, self.options.max_incoming_packet_size)
         } else {
             let addr = self.options.broker_addr.as_str();
             let port = self.options.port;
             let socket = TcpStream::connect((addr, port)).await?;
-            Network::new(socket, self.options.max_incoming_packet_size)
+            Io::new(socket, self.options.max_incoming_packet_size)
         };
 
         self.network = Some(network);
@@ -364,7 +365,7 @@ impl EventLoop {
         time::timeout(
             Duration::from_secs(self.options.connection_timeout()),
             async {
-                network.connect(connect).await?;
+                network.o.connect(connect).await?;
                 Ok::<_, ConnectionError>(())
             },
         )
@@ -375,7 +376,7 @@ impl EventLoop {
         let packet = time::timeout(
             Duration::from_secs(self.options.connection_timeout()),
             async {
-                let packet = match network.readb(incoming).await? {
+                let packet = match network.i.readb(incoming).await? {
                     Incoming::ConnAck(connack) if connack.code == ConnectReturnCode::Accepted => {
                         Packet::ConnAck(connack)
                     }

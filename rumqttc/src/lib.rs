@@ -82,6 +82,7 @@ use std::time::Duration;
 mod client;
 mod eventloop;
 mod framed;
+mod network;
 mod state;
 mod tls;
 
