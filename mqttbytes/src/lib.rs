@@ -1,4 +1,8 @@
 use std::slice::Iter;
+use bytes::{Bytes, BytesMut, Buf, BufMut};
+
+pub mod v4;
+pub mod v5;
 
 /// Error during serialization and deserialization
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -140,7 +144,7 @@ fn parse_fixed_header(stream: &mut Iter<u8>) -> Result<FixedHeader, Error> {
 /// Parses variable byte integer in the stream and returns the length
 /// and number of bytes that make it. Used for remaining length calculation
 /// as well as for calculating property lengths
-pub(crate) fn length(stream: &mut Iter<u8>) -> Result<(usize, usize), Error> {
+fn length(stream: &mut Iter<u8>) -> Result<(usize, usize), Error> {
     let mut len: usize = 0;
     let mut len_len = 0;
     let mut done = false;
@@ -178,3 +182,88 @@ pub(crate) fn length(stream: &mut Iter<u8>) -> Result<(usize, usize), Error> {
 
     Ok((len_len, len))
 }
+
+/// Reads a series of bytes with a length from a byte stream
+fn read_mqtt_bytes(stream: &mut Bytes) -> Result<Bytes, Error> {
+    let len = read_u16(stream) as usize;
+
+    // Prevent attacks with wrong remaining length. Ensures that packet payload
+    // sent by the remote is not > what it promised with remaining length
+    if len > stream.len() {
+        return Err(Error::BoundaryCrossed(len));
+    }
+
+    Ok(stream.split_to(len))
+}
+
+/// Reads a string from bytes stream
+fn read_mqtt_string(stream: &mut Bytes) -> Result<String, Error> {
+    let s = read_mqtt_bytes(stream)?;
+    match String::from_utf8(s.to_vec()) {
+        Ok(v) => Ok(v),
+        Err(_e) => Err(Error::TopicNotUtf8),
+    }
+}
+
+/// Serializes bytes to stream (including length)
+fn write_mqtt_bytes(stream: &mut BytesMut, bytes: &[u8]) {
+    stream.put_u16(bytes.len() as u16);
+    stream.extend_from_slice(bytes);
+}
+
+/// Serializes a string to stream
+fn write_mqtt_string(stream: &mut BytesMut, string: &str) {
+    write_mqtt_bytes(stream, string.as_bytes());
+}
+
+/// Writes remaining length to stream and returns number of bytes for remaining length
+fn write_remaining_length(stream: &mut BytesMut, len: usize) -> Result<usize, Error> {
+    if len > 268_435_455 {
+        return Err(Error::PayloadTooLong);
+    }
+
+    let mut done = false;
+    let mut x = len;
+    let mut count = 0;
+
+    while !done {
+        let mut byte = (x % 128) as u8;
+        x /= 128;
+        if x > 0 {
+            byte |= 128;
+        }
+
+        stream.put_u8(byte);
+        count += 1;
+        done = x == 0;
+    }
+
+    Ok(count)
+}
+
+/// Return number of remaining length bytes required for encoding length
+fn len_len(len: usize) -> usize {
+    if len >= 2_097_152 {
+        4
+    } else if len >= 16_384 {
+        3
+    } else if len >= 128 {
+        2
+    } else {
+        1
+    }
+}
+
+/// After collecting enough bytes to frame a packet (packet's frame())
+/// , It's possible that content itself in the stream is wrong. Like expected
+/// packet id or qos not being present. In cases where `read_mqtt_string` or
+/// `read_mqtt_bytes` exhausted remaining length but packet framing expects to
+/// parse qos next, these pre checks will prevent `bytes` crashes
+fn read_u16(stream: &mut Bytes) -> Result<u16, Error> {
+    if stream.len() < 2 {
+        return Err(Error::MalformedPacket);
+    }
+
+    Ok(stream.get_u16())
+}
+
