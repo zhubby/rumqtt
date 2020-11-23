@@ -1,3 +1,5 @@
+extern crate alloc;
+
 use std::slice::Iter;
 use bytes::{Bytes, BytesMut, Buf, BufMut};
 
@@ -59,6 +61,15 @@ pub enum Protocol {
     MQTT(u8),
 }
 
+/// Quality of service
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
+pub enum QoS {
+    AtMostOnce = 0,
+    AtLeastOnce = 1,
+    ExactlyOnce = 2,
+}
+
 /// Packet type from a byte
 ///
 /// ```ignore
@@ -93,6 +104,28 @@ impl FixedHeader {
         }
     }
 
+
+    pub fn packet_type(&self) -> Result<PacketType, Error> {
+        let num = self.byte1 >> 4;
+        match num {
+            1 => Ok(PacketType::Connect),
+            2 => Ok(PacketType::ConnAck),
+            3 => Ok(PacketType::Publish),
+            4 => Ok(PacketType::PubAck),
+            5 => Ok(PacketType::PubRec),
+            6 => Ok(PacketType::PubRel),
+            7 => Ok(PacketType::PubComp),
+            8 => Ok(PacketType::Subscribe),
+            9 => Ok(PacketType::SubAck),
+            10 => Ok(PacketType::Unsubscribe),
+            11 => Ok(PacketType::UnsubAck),
+            12 => Ok(PacketType::PingReq),
+            13 => Ok(PacketType::PingResp),
+            14 => Ok(PacketType::Disconnect),
+            _ => Err(Error::InvalidPacketType(num)),
+        }
+    }
+
     /// Returns the size of full packet (fixed header + variable header + payload)
     /// Fixed header is enough to get the size of a frame in the stream
     pub fn frame_length(&self) -> usize {
@@ -105,10 +138,11 @@ impl FixedHeader {
 /// The passed stream doesn't modify parent stream's cursor. If this function
 /// returned an error, next `check` on the same parent stream is forced start
 /// with cursor at 0 again (Iter is owned. Only Iter's cursor is changed internally)
-pub fn check(mut stream: Iter<u8>, max_packet_size: usize) -> Result<FixedHeader, Error> {
+pub fn check(stream: Iter<u8>, max_packet_size: usize) -> Result<FixedHeader, Error> {
     // Create fixed header if there are enough bytes in the stream
     // to frame full packet
-    let fixed_header = parse_fixed_header(&mut stream)?;
+    let stream_len = stream.len();
+    let fixed_header = parse_fixed_header(stream)?;
 
     // Don't let rogue connections attack with huge payloads.
     // Disconnect them before reading all that data
@@ -119,7 +153,6 @@ pub fn check(mut stream: Iter<u8>, max_packet_size: usize) -> Result<FixedHeader
     // If the current call fails due to insufficient bytes in the stream,
     // after calculating remaining length, we extend the stream
     let frame_length = fixed_header.frame_length();
-    let stream_len = stream.len();
     if stream_len < frame_length {
         return Err(Error::InsufficientBytes(frame_length - stream_len));
     }
@@ -128,7 +161,7 @@ pub fn check(mut stream: Iter<u8>, max_packet_size: usize) -> Result<FixedHeader
 }
 
 /// Parses fixed header
-fn parse_fixed_header(stream: &mut Iter<u8>) -> Result<FixedHeader, Error> {
+fn parse_fixed_header(mut stream: Iter<u8>) -> Result<FixedHeader, Error> {
     // At least 2 bytes are necessary to frame a packet
     let stream_len = stream.len();
     if stream_len < 2 {
@@ -144,7 +177,7 @@ fn parse_fixed_header(stream: &mut Iter<u8>) -> Result<FixedHeader, Error> {
 /// Parses variable byte integer in the stream and returns the length
 /// and number of bytes that make it. Used for remaining length calculation
 /// as well as for calculating property lengths
-fn length(stream: &mut Iter<u8>) -> Result<(usize, usize), Error> {
+fn length(stream: Iter<u8>) -> Result<(usize, usize), Error> {
     let mut len: usize = 0;
     let mut len_len = 0;
     let mut done = false;
@@ -185,10 +218,12 @@ fn length(stream: &mut Iter<u8>) -> Result<(usize, usize), Error> {
 
 /// Reads a series of bytes with a length from a byte stream
 fn read_mqtt_bytes(stream: &mut Bytes) -> Result<Bytes, Error> {
-    let len = read_u16(stream) as usize;
+    let len = read_u16(stream)? as usize;
 
-    // Prevent attacks with wrong remaining length. Ensures that packet payload
-    // sent by the remote is not > what it promised with remaining length
+    // Prevent attacks with wrong remaining length. This method is used in
+    // `packet.assembly()` with (enough) bytes to frame packet. Ensures that
+    // reading variable len string or bytes doesn't cross promised boundary
+    // with `read_fixed_header()`
     if len > stream.len() {
         return Err(Error::BoundaryCrossed(len));
     }
@@ -254,6 +289,16 @@ fn len_len(len: usize) -> usize {
     }
 }
 
+/// Maps a number to QoS
+pub fn qos(num: u8) -> Result<QoS, Error> {
+    match num {
+        0 => Ok(QoS::AtMostOnce),
+        1 => Ok(QoS::AtLeastOnce),
+        2 => Ok(QoS::ExactlyOnce),
+        qos => Err(Error::InvalidQoS(qos)),
+    }
+}
+
 /// After collecting enough bytes to frame a packet (packet's frame())
 /// , It's possible that content itself in the stream is wrong. Like expected
 /// packet id or qos not being present. In cases where `read_mqtt_string` or
@@ -265,5 +310,13 @@ fn read_u16(stream: &mut Bytes) -> Result<u16, Error> {
     }
 
     Ok(stream.get_u16())
+}
+
+fn read_u8(stream: &mut Bytes) -> Result<u8, Error> {
+    if stream.len() < 1 {
+        return Err(Error::MalformedPacket);
+    }
+
+    Ok(stream.get_u8())
 }
 

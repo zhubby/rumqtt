@@ -1,5 +1,4 @@
 use super::*;
-use crate::*;
 use alloc::vec::Vec;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::convert::{TryFrom, TryInto};
@@ -22,7 +21,7 @@ impl SubAck {
     }
 
     pub(crate) fn assemble(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Self, Error> {
-        let variable_header_index = fixed_header.fixed_len;
+        let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
 
         let pkid = bytes.get_u16();
@@ -52,7 +51,7 @@ impl SubAck {
 
         if let Some(properties) = &self.properties {
             let properties_len = properties.len();
-            let properties_len_len = remaining_len_len(properties_len);
+            let properties_len_len = len_len(properties_len);
             len += properties_len_len + properties_len;
         } else {
             // just 1 byte representing 0 len
@@ -203,7 +202,7 @@ impl TryFrom<u8> for SubscribeReasonCode {
 
 #[cfg(test)]
 mod test {
-    use crate::*;
+    use super::*;
     use alloc::vec;
     use bytes::BytesMut;
     use pretty_assertions::assert_eq;
@@ -244,14 +243,10 @@ mod test {
         let packetstream = &sample_bytes();
 
         stream.extend_from_slice(&packetstream[..]);
-        let packet = mqtt_read(&mut stream, 200).unwrap();
-        let packet = match packet {
-            Packet::SubAck(suback) => suback,
-            packet => panic!("Invalid packet = {:?}", packet),
-        };
-
-        let subscribe = sample();
-        assert_eq!(packet, subscribe);
+        let fixed_header = parse_fixed_header(stream.iter()).unwrap();
+        let suback_bytes = stream.split_to(fixed_header.frame_length()).freeze();
+        let suback = SubAck::assemble(fixed_header, suback_bytes).unwrap();
+        assert_eq!(suback, sample());
     }
 
     #[test]

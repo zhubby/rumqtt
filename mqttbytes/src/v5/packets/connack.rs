@@ -1,5 +1,4 @@
 use super::*;
-use crate::*;
 use alloc::string::String;
 use alloc::vec::Vec;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
@@ -50,11 +49,11 @@ impl ConnAck {
     }
 
     pub(crate) fn assemble(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Self, Error> {
-        let variable_header_index = fixed_header.fixed_len;
+        let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
 
-        let flags = bytes.get_u8();
-        let return_code = bytes.get_u8();
+        let flags = read_u8(&mut bytes)?;
+        let return_code = read_u8(&mut bytes)?;
 
         let session_present = (flags & 0x01) == 1;
         let code = connect_return(return_code)?;
@@ -74,7 +73,7 @@ impl ConnAck {
 
         if let Some(properties) = &self.properties {
             let properties_len = properties.len();
-            let properties_len_len = remaining_len_len(properties_len);
+            let properties_len_len = len_len(properties_len);
             len += properties_len_len + properties_len;
         }
 
@@ -477,6 +476,7 @@ fn connect_return(num: u8) -> Result<ConnectReturnCode, Error> {
 #[cfg(test)]
 mod test {
     use crate::*;
+    use super::*;
     use alloc::vec;
     use bytes::{Bytes, BytesMut};
     use pretty_assertions::assert_eq;
@@ -541,14 +541,12 @@ mod test {
         let mut stream = bytes::BytesMut::new();
         let packetstream = &sample_bytes();
         stream.extend_from_slice(&packetstream[..]);
-        let packet = mqtt_read(&mut stream, 200).unwrap();
-        let packet = match packet {
-            Packet::ConnAck(connect) => connect,
-            packet => panic!("Invalid packet = {:?}", packet),
-        };
 
-        let connect = sample();
-        assert_eq!(packet, connect);
+        let fixed_header = parse_fixed_header(stream.iter()).unwrap();
+        let connack_bytes = stream.split_to(fixed_header.frame_length()).freeze();
+        let connack = ConnAck::assemble(fixed_header, connack_bytes).unwrap();
+
+        assert_eq!(connack, sample());
     }
 
     #[test]

@@ -1,5 +1,4 @@
 use super::*;
-use crate::*;
 use alloc::string::String;
 use alloc::vec::Vec;
 use bytes::{Buf, Bytes};
@@ -15,16 +14,11 @@ pub struct Subscribe {
 
 impl Subscribe {
     pub(crate) fn assemble(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Self, Error> {
-        let variable_header_index = fixed_header.fixed_len;
+        let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
 
         let pkid = bytes.get_u16();
         let properties = SubscribeProperties::extract(&mut bytes)?;
-
-        // TODO: Fix this in mqtt4bytes
-        if !bytes.has_remaining() {
-            return Err(Error::MalformedPacket);
-        }
 
         // variable header size = 2 (packet identifier)
         let mut filters = Vec::new();
@@ -110,7 +104,7 @@ impl Subscribe {
 
         if let Some(properties) = &self.properties {
             let properties_len = properties.len();
-            let properties_len_len = remaining_len_len(properties_len);
+            let properties_len_len = len_len(properties_len);
             len += properties_len_len + properties_len;
         } else {
             // just 1 byte representing 0 len
@@ -159,8 +153,7 @@ impl SubscribeProperties {
         let mut len = 0;
 
         if let Some(id) = &self.id {
-            // TODO: Rename remaining_len_len to variable_len_len
-            len += 1 + remaining_len_len(*id);
+            len += 1 + len_len(*id);
         }
 
         for (key, value) in self.user_properties.iter() {
@@ -323,7 +316,7 @@ impl fmt::Debug for SubscribeFilter {
 
 #[cfg(test)]
 mod test {
-    use crate::*;
+    use super::*;
     use alloc::vec;
     use bytes::BytesMut;
     use pretty_assertions::assert_eq;
@@ -367,14 +360,11 @@ mod test {
         let packetstream = &sample_bytes();
 
         stream.extend_from_slice(&packetstream[..]);
-        let packet = mqtt_read(&mut stream, 200).unwrap();
-        let packet = match packet {
-            Packet::Subscribe(subscribe) => subscribe,
-            packet => panic!("Invalid packet = {:?}", packet),
-        };
 
-        let subscribe = sample();
-        assert_eq!(packet, subscribe);
+        let fixed_header = parse_fixed_header(stream.iter()).unwrap();
+        let subscribe_bytes = stream.split_to(fixed_header.frame_length()).freeze();
+        let subscribe = Subscribe::assemble(fixed_header, subscribe_bytes).unwrap();
+        assert_eq!(subscribe, sample());
     }
 
     #[test]
@@ -389,7 +379,7 @@ mod test {
     }
 
     fn sample2() -> Subscribe {
-        let mut filter = SubscribeFilter::new("hello/world".to_owned(), QoS::AtLeastOnce);
+        let filter = SubscribeFilter::new("hello/world".to_owned(), QoS::AtLeastOnce);
         Subscribe {
             pkid: 42,
             filters: vec![filter],
@@ -410,14 +400,11 @@ mod test {
         let packetstream = &sample2_bytes();
 
         stream.extend_from_slice(&packetstream[..]);
-        let packet = mqtt_read(&mut stream, 200).unwrap();
-        let packet = match packet {
-            Packet::Subscribe(subscribe) => subscribe,
-            packet => panic!("Invalid packet = {:?}", packet),
-        };
 
-        let subscribe = sample2();
-        assert_eq!(packet, subscribe);
+        let fixed_header = parse_fixed_header(stream.iter()).unwrap();
+        let subscribe_bytes = stream.split_to(fixed_header.frame_length()).freeze();
+        let subscribe = Subscribe::assemble(fixed_header, subscribe_bytes).unwrap();
+        assert_eq!(subscribe, sample2());
     }
 
     #[test]
@@ -426,8 +413,8 @@ mod test {
         let mut buf = BytesMut::new();
         publish.write(&mut buf).unwrap();
 
-        println!("{:X?}", buf);
-        println!("{:#04X?}", &buf[..]);
+        // println!("{:X?}", buf);
+        // println!("{:#04X?}", &buf[..]);
         assert_eq!(&buf[..], sample2_bytes());
     }
 }

@@ -1,5 +1,4 @@
 use super::*;
-use crate::*;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 /// Return code in connack
@@ -35,7 +34,7 @@ impl PubRec {
     }
 
     pub(crate) fn assemble(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Self, Error> {
-        let variable_header_index = fixed_header.fixed_len;
+        let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
         let pkid = bytes.get_u16();
         if fixed_header.remaining_len == 2 {
@@ -74,7 +73,7 @@ impl PubRec {
 
         if let Some(properties) = &self.properties {
             let properties_len = properties.len();
-            let properties_len_len = remaining_len_len(properties_len);
+            let properties_len_len = len_len(properties_len);
             len += properties_len_len + properties_len;
         }
         // Unlike other packets, property length can be ignored if there are
@@ -199,7 +198,7 @@ fn reason(num: u8) -> Result<PubRecReason, Error> {
 
 #[cfg(test)]
 mod test {
-    use crate::*;
+    use super::*;
     use alloc::vec;
     use bytes::BytesMut;
     use pretty_assertions::assert_eq;
@@ -235,14 +234,11 @@ mod test {
         let mut stream = bytes::BytesMut::new();
         let packetstream = &sample_bytes();
         stream.extend_from_slice(&packetstream[..]);
-        let packet = mqtt_read(&mut stream, 200).unwrap();
-        let packet = match packet {
-            Packet::PubRec(pubrec) => pubrec,
-            packet => panic!("Invalid packet = {:?}", packet),
-        };
 
-        let puback = sample();
-        assert_eq!(packet, puback);
+        let fixed_header = parse_fixed_header(stream.iter()).unwrap();
+        let pubrec_bytes = stream.split_to(fixed_header.frame_length()).freeze();
+        let pubrec = PubRec::assemble(fixed_header, pubrec_bytes).unwrap();
+        assert_eq!(pubrec, sample());
     }
 
     #[test]

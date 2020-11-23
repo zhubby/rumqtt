@@ -1,5 +1,4 @@
 use super::*;
-use crate::*;
 use alloc::string::String;
 use alloc::vec::Vec;
 use bytes::{Buf, Bytes};
@@ -25,7 +24,7 @@ pub struct Connect {
 
 impl Connect {
     pub(crate) fn assemble(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Connect, Error> {
-        let variable_header_index = fixed_header.fixed_len;
+        let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
 
         // Variable header
@@ -94,7 +93,7 @@ impl Connect {
 
         if let Some(properties) = &self.properties {
             let properties_len = properties.len();
-            let properties_len_len = remaining_len_len(properties_len);
+            let properties_len_len = len_len(properties_len);
             len += properties_len_len + properties_len;
         } else {
             // just 1 byte representing 0 len
@@ -210,7 +209,7 @@ impl LastWill {
         let mut len = 0;
         if let Some(properties) = &self.properties {
             let properties_len = properties.len();
-            let properties_len_len = remaining_len_len(properties_len);
+            let properties_len_len = len_len(properties_len);
             len += properties_len_len + properties_len;
         } else {
             // just 1 byte representing 0 len
@@ -672,7 +671,7 @@ impl ConnectProperties {
 
 #[cfg(test)]
 mod test {
-    use crate::*;
+    use super::*;
     use alloc::vec;
     use bytes::{Bytes, BytesMut};
     use pretty_assertions::assert_eq;
@@ -771,14 +770,12 @@ mod test {
         let mut stream = bytes::BytesMut::new();
         let packetstream = &sample_bytes();
         stream.extend_from_slice(&packetstream[..]);
-        let packet = mqtt_read(&mut stream, 200).unwrap();
-        let packet = match packet {
-            Packet::Connect(connect) => connect,
-            packet => panic!("Invalid packet = {:?}", packet),
-        };
 
-        let connect = sample();
-        assert_eq!(packet, connect);
+
+        let fixed_header = parse_fixed_header(stream.iter()).unwrap();
+        let connect_bytes = stream.split_to(fixed_header.frame_length()).freeze();
+        let connect= Connect::assemble(fixed_header, connect_bytes).unwrap();
+        assert_eq!(connect, sample());
     }
 
     #[test]
@@ -813,14 +810,11 @@ mod test {
         let mut stream = bytes::BytesMut::new();
         let packetstream = &sample2_bytes();
         stream.extend_from_slice(&packetstream[..]);
-        let packet = mqtt_read(&mut stream, 200).unwrap();
-        let packet = match packet {
-            Packet::Connect(connect) => connect,
-            packet => panic!("Invalid packet = {:?}", packet),
-        };
 
-        let connect = sample2();
-        assert_eq!(packet, connect);
+        let fixed_header = parse_fixed_header(stream.iter()).unwrap();
+        let connect_bytes = stream.split_to(fixed_header.frame_length()).freeze();
+        let connect= Connect::assemble(fixed_header, connect_bytes).unwrap();
+        assert_eq!(connect, sample2());
     }
 
     #[test]
@@ -888,14 +882,11 @@ mod test {
         let mut stream = bytes::BytesMut::new();
         let packetstream = &sample3_bytes();
         stream.extend_from_slice(&packetstream[..]);
-        let packet = mqtt_read(&mut stream, 200).unwrap();
-        let packet = match packet {
-            Packet::Connect(connect) => connect,
-            packet => panic!("Invalid packet = {:?}", packet),
-        };
 
-        let connect = sample3();
-        assert_eq!(packet, connect);
+        let fixed_header = parse_fixed_header(stream.iter()).unwrap();
+        let connect_bytes = stream.split_to(fixed_header.frame_length()).freeze();
+        let connect= Connect::assemble(fixed_header, connect_bytes).unwrap();
+        assert_eq!(connect, sample3());
     }
 
     #[test]

@@ -1,5 +1,4 @@
 use super::*;
-use crate::*;
 use alloc::string::String;
 use alloc::vec::Vec;
 use bytes::{Buf, Bytes};
@@ -64,7 +63,7 @@ impl Publish {
         let dup = (fixed_header.byte1 & 0b1000) != 0;
         let retain = (fixed_header.byte1 & 0b0001) != 0;
 
-        let variable_header_index = fixed_header.fixed_len;
+        let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
         let topic = read_mqtt_string(&mut bytes)?;
 
@@ -101,7 +100,7 @@ impl Publish {
 
         if let Some(properties) = &self.properties {
             let properties_len = properties.len();
-            let properties_len_len = remaining_len_len(properties_len);
+            let properties_len_len = len_len(properties_len);
             len += properties_len_len + properties_len;
         } else {
             // just 1 byte representing 0 len
@@ -187,7 +186,7 @@ impl PublishProperties {
         }
 
         for id in self.subscription_identifiers.iter() {
-            len += 1 + remaining_len_len(*id);
+            len += 1 + len_len(*id);
         }
 
         if let Some(typ) = &self.content_type {
@@ -340,7 +339,7 @@ impl fmt::Debug for Publish {
 
 #[cfg(test)]
 mod test {
-    use crate::*;
+    use super::*;
     use alloc::vec;
     use bytes::{Bytes, BytesMut};
     use pretty_assertions::assert_eq;
@@ -394,14 +393,12 @@ mod test {
         let mut stream = bytes::BytesMut::new();
         let packetstream = &sample_bytes();
         stream.extend_from_slice(&packetstream[..]);
-        let packet = mqtt_read(&mut stream, 200).unwrap();
-        let packet = match packet {
-            Packet::Publish(publish) => publish,
-            packet => panic!("Invalid packet = {:?}", packet),
-        };
 
-        let connect = sample();
-        assert_eq!(packet, connect);
+
+        let fixed_header = parse_fixed_header(stream.iter()).unwrap();
+        let publish_bytes = stream.split_to(fixed_header.frame_length()).freeze();
+        let publish = Publish::assemble(fixed_header, publish_bytes).unwrap();
+        assert_eq!(publish, sample());
     }
 
     #[test]

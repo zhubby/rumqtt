@@ -1,5 +1,4 @@
 use super::*;
-use crate::*;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 /// Return code in connack
@@ -35,7 +34,7 @@ impl PubAck {
     }
 
     pub(crate) fn assemble(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Self, Error> {
-        let variable_header_index = fixed_header.fixed_len;
+        let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
         let pkid = bytes.get_u16();
 
@@ -77,7 +76,7 @@ impl PubAck {
 
         if let Some(properties) = &self.properties {
             let properties_len = properties.len();
-            let properties_len_len = remaining_len_len(properties_len);
+            let properties_len_len = len_len(properties_len);
             len += properties_len_len + properties_len;
         }
 
@@ -204,7 +203,7 @@ fn reason(num: u8) -> Result<PubAckReason, Error> {
 
 #[cfg(test)]
 mod test {
-    use crate::*;
+    use super::*;
     use alloc::vec;
     use bytes::BytesMut;
     use pretty_assertions::assert_eq;
@@ -240,14 +239,11 @@ mod test {
         let mut stream = bytes::BytesMut::new();
         let packetstream = &sample_bytes();
         stream.extend_from_slice(&packetstream[..]);
-        let packet = mqtt_read(&mut stream, 200).unwrap();
-        let packet = match packet {
-            Packet::PubAck(puback) => puback,
-            packet => panic!("Invalid packet = {:?}", packet),
-        };
 
-        let puback = sample();
-        assert_eq!(packet, puback);
+        let fixed_header = parse_fixed_header(stream.iter()).unwrap();
+        let puback_bytes = stream.split_to(fixed_header.frame_length()).freeze();
+        let puback = PubAck::assemble(fixed_header, puback_bytes).unwrap();
+        assert_eq!(puback, sample());
     }
 
     #[test]
@@ -275,14 +271,11 @@ mod test {
         let mut stream = bytes::BytesMut::new();
         let packetstream = &sample2_bytes();
         stream.extend_from_slice(&packetstream[..]);
-        let packet = mqtt_read(&mut stream, 200).unwrap();
-        let packet = match packet {
-            Packet::PubAck(puback) => puback,
-            packet => panic!("Invalid packet = {:?}", packet),
-        };
 
-        let puback = sample2();
-        assert_eq!(packet, puback);
+        let fixed_header = parse_fixed_header(stream.iter()).unwrap();
+        let puback_bytes = stream.split_to(fixed_header.frame_length()).freeze();
+        let puback = PubAck::assemble(fixed_header, puback_bytes).unwrap();
+        assert_eq!(puback, sample2());
     }
 
     #[test]
@@ -311,14 +304,12 @@ mod test {
         let mut stream = bytes::BytesMut::new();
         let packetstream = &sample3_bytes();
         stream.extend_from_slice(&packetstream[..]);
-        let packet = mqtt_read(&mut stream, 200).unwrap();
-        let packet = match packet {
-            Packet::PubAck(puback) => puback,
-            packet => panic!("Invalid packet = {:?}", packet),
-        };
 
-        let puback = sample3();
-        assert_eq!(packet, puback);
+
+        let fixed_header = parse_fixed_header(stream.iter()).unwrap();
+        let puback_bytes = stream.split_to(fixed_header.frame_length()).freeze();
+        let puback = PubAck::assemble(fixed_header, puback_bytes).unwrap();
+        assert_eq!(puback, sample3());
     }
 
     #[test]

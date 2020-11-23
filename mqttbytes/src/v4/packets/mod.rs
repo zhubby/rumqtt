@@ -5,7 +5,6 @@ mod ping;
 mod puback;
 mod pubcomp;
 mod publish;
-mod publishraw;
 mod pubrec;
 mod pubrel;
 mod suback;
