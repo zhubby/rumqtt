@@ -36,8 +36,8 @@ impl ConnAck {
             return Err(Error::PayloadSizeIncorrect);
         }
 
-        let flags = bytes.get_u8();
-        let return_code = bytes.get_u8();
+        let flags = read_u8(&mut bytes)?;
+        let return_code = read_u8(&mut bytes)?;
 
         let session_present = (flags & 0x01) == 1;
         let code = connect_return(return_code)?;

@@ -14,7 +14,7 @@ impl Unsubscribe {
     pub(crate) fn assemble(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Self, Error> {
         let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
-        let pkid = bytes.get_u16();
+        let pkid = read_u16(&mut bytes)?;
         let mut payload_bytes = fixed_header.remaining_len - 2;
         let mut topics = Vec::with_capacity(1);
 

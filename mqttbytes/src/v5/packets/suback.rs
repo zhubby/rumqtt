@@ -24,7 +24,7 @@ impl SubAck {
         let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
 
-        let pkid = bytes.get_u16();
+        let pkid = read_u16(&mut bytes)?;
         let properties = SubAckProperties::extract(&mut bytes)?;
 
         if !bytes.has_remaining() {
@@ -33,7 +33,7 @@ impl SubAck {
 
         let mut return_codes = Vec::new();
         while bytes.has_remaining() {
-            let return_code = bytes.get_u8();
+            let return_code = read_u8(&mut bytes)?;
             return_codes.push(return_code.try_into()?);
         }
 
@@ -115,7 +115,7 @@ impl SubAckProperties {
         let mut cursor = 0;
         // read until cursor reaches property length. properties_len = 0 will skip this loop
         while cursor < properties_len {
-            let prop = bytes.get_u8();
+            let prop = read_u8(&mut bytes)?;
             cursor += 1;
 
             match property(prop)? {

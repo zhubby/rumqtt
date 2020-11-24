@@ -243,24 +243,24 @@ impl ConnAckProperties {
         let mut cursor = 0;
         // read until cursor reaches property length. properties_len = 0 will skip this loop
         while cursor < properties_len {
-            let prop = bytes.get_u8();
+            let prop = read_u8(&mut bytes)?;
             cursor += 1;
 
             match property(prop)? {
                 PropertyType::SessionExpiryInterval => {
-                    session_expiry_interval = Some(bytes.get_u32());
+                    session_expiry_interval = Some(read_u32(&mut bytes)?);
                     cursor += 4;
                 }
                 PropertyType::ReceiveMaximum => {
-                    receive_max = Some(bytes.get_u16());
+                    receive_max = Some(read_u16(&mut bytes)?);
                     cursor += 2;
                 }
                 PropertyType::MaximumQos => {
-                    max_qos = Some(bytes.get_u8());
+                    max_qos = Some(read_u8(&mut bytes)?);
                     cursor += 1;
                 }
                 PropertyType::RetainAvailable => {
-                    retain_available = Some(bytes.get_u8());
+                    retain_available = Some(read_u8(&mut bytes)?);
                     cursor += 1;
                 }
                 PropertyType::AssignedClientIdentifier => {
@@ -269,11 +269,11 @@ impl ConnAckProperties {
                     assigned_client_identifier = Some(id);
                 }
                 PropertyType::MaximumPacketSize => {
-                    max_packet_size = Some(bytes.get_u32());
+                    max_packet_size = Some(read_u32(&mut bytes)?);
                     cursor += 4;
                 }
                 PropertyType::TopicAliasMaximum => {
-                    topic_alias_max = Some(bytes.get_u16());
+                    topic_alias_max = Some(read_u16(&mut bytes)?);
                     cursor += 2;
                 }
                 PropertyType::ReasonString => {
@@ -288,19 +288,19 @@ impl ConnAckProperties {
                     user_properties.push((key, value));
                 }
                 PropertyType::WildcardSubscriptionAvailable => {
-                    wildcard_subscription_available = Some(bytes.get_u8());
+                    wildcard_subscription_available = Some(read_u8(&mut bytes)?);
                     cursor += 1;
                 }
                 PropertyType::SubscriptionIdentifierAvailable => {
-                    subscription_identifiers_available = Some(bytes.get_u8());
+                    subscription_identifiers_available = Some(read_u8(&mut bytes)?);
                     cursor += 1;
                 }
                 PropertyType::SharedSubscriptionAvailable => {
-                    shared_subscription_available = Some(bytes.get_u8());
+                    shared_subscription_available = Some(read_u8(&mut bytes)?);
                     cursor += 1;
                 }
                 PropertyType::ServerKeepAlive => {
-                    server_keep_alive = Some(bytes.get_u16());
+                    server_keep_alive = Some(read_u16(&mut bytes)?);
                     cursor += 2;
                 }
                 PropertyType::ResponseInformation => {

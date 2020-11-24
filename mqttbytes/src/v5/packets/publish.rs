@@ -70,7 +70,7 @@ impl Publish {
         // Packet identifier exists where QoS > 0
         let pkid = match qos {
             QoS::AtMostOnce => 0,
-            QoS::AtLeastOnce | QoS::ExactlyOnce => bytes.get_u16(),
+            QoS::AtLeastOnce | QoS::ExactlyOnce => read_u16(&mut bytes)?,
         };
 
         let properties = PublishProperties::extract(&mut bytes)?;
@@ -215,20 +215,20 @@ impl PublishProperties {
         let mut cursor = 0;
         // read until cursor reaches property length. properties_len = 0 will skip this loop
         while cursor < properties_len {
-            let prop = bytes.get_u8();
+            let prop = read_u8(&mut bytes)?;
             cursor += 1;
 
             match property(prop)? {
                 PropertyType::PayloadFormatIndicator => {
-                    payload_format_indicator = Some(bytes.get_u8());
+                    payload_format_indicator = Some(read_u8(&mut bytes)?);
                     cursor += 1;
                 }
                 PropertyType::MessageExpiryInterval => {
-                    message_expiry_interval = Some(bytes.get_u32());
+                    message_expiry_interval = Some(read_u32(&mut bytes)?);
                     cursor += 4;
                 }
                 PropertyType::TopicAlias => {
-                    topic_alias = Some(bytes.get_u16());
+                    topic_alias = Some(read_u16(&mut bytes)?);
                     cursor += 2;
                 }
                 PropertyType::ResponseTopic => {

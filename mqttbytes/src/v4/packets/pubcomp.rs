@@ -19,7 +19,7 @@ impl PubComp {
 
         let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
-        let pkid = bytes.get_u16();
+        let pkid = read_u16(&mut bytes)?;
         let pubcomp = PubComp { pkid };
 
         Ok(pubcomp)

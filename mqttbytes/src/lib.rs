@@ -320,3 +320,11 @@ fn read_u8(stream: &mut Bytes) -> Result<u8, Error> {
     Ok(stream.get_u8())
 }
 
+fn read_u32(stream: &mut Bytes) -> Result<u32, Error> {
+    if stream.len() < 4 {
+        return Err(Error::MalformedPacket);
+    }
+
+    Ok(stream.get_u32())
+}
+

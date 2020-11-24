@@ -17,7 +17,7 @@ impl Subscribe {
         let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
 
-        let pkid = bytes.get_u16();
+        let pkid = read_u16(&mut bytes)?;
         let properties = SubscribeProperties::extract(&mut bytes)?;
 
         // variable header size = 2 (packet identifier)
@@ -25,7 +25,7 @@ impl Subscribe {
 
         while bytes.has_remaining() {
             let path = read_mqtt_string(&mut bytes)?;
-            let options = bytes.get_u8();
+            let options = read_u8(&mut bytes)?;
             let requested_qos = options & 0b0000_0011;
 
             let nolocal = options >> 2 & 0b0000_0001;
@@ -177,7 +177,7 @@ impl SubscribeProperties {
         let mut cursor = 0;
         // read until cursor reaches property length. properties_len = 0 will skip this loop
         while cursor < properties_len {
-            let prop = bytes.get_u8();
+            let prop = read_u8(&mut bytes)?;
             cursor += 1;
 
             match property(prop)? {

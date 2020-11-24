@@ -50,7 +50,7 @@ impl Publish {
         // Packet identifier exists where QoS > 0
         let pkid = match qos {
             QoS::AtMostOnce => 0,
-            QoS::AtLeastOnce | QoS::ExactlyOnce => payload.get_u16(),
+            QoS::AtLeastOnce | QoS::ExactlyOnce => read_u16(&mut payload)?,
         };
 
         if qos != QoS::AtMostOnce && pkid == 0 {

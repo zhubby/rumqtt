@@ -36,7 +36,7 @@ impl PubRec {
     pub(crate) fn assemble(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Self, Error> {
         let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
-        let pkid = bytes.get_u16();
+        let pkid = read_u16(&mut bytes)?;
         if fixed_header.remaining_len == 2 {
             return Ok(PubRec {
                 pkid,
@@ -45,7 +45,7 @@ impl PubRec {
             });
         }
 
-        let ack_reason = bytes.get_u8();
+        let ack_reason = read_u8(&mut bytes)?;
         if fixed_header.remaining_len < 4 {
             return Ok(PubRec {
                 pkid,
@@ -135,7 +135,7 @@ impl PubRecProperties {
         let mut cursor = 0;
         // read until cursor reaches property length. properties_len = 0 will skip this loop
         while cursor < properties_len {
-            let prop = bytes.get_u8();
+            let prop = read_u8(&mut bytes)?;
             cursor += 1;
 
             match property(prop)? {

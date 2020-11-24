@@ -37,7 +37,7 @@ impl Connect {
         let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
         let protocol_name = read_mqtt_string(&mut bytes)?;
-        let protocol_level = bytes.get_u8();
+        let protocol_level = read_u8(&mut bytes)?;
         if protocol_name != "MQTT" {
             return Err(Error::InvalidProtocol);
         }
@@ -47,9 +47,9 @@ impl Connect {
             num => return Err(Error::InvalidProtocolLevel(num)),
         };
 
-        let connect_flags = bytes.get_u8();
+        let connect_flags = read_u8(&mut bytes)?;
         let clean_session = (connect_flags & 0b10) != 0;
-        let keep_alive = bytes.get_u16();
+        let keep_alive = read_u16(&mut bytes)?;
         let client_id = read_mqtt_string(&mut bytes)?;
         let last_will = LastWill::extract(connect_flags, &mut bytes)?;
         let login = Login::extract(connect_flags, &mut bytes)?;

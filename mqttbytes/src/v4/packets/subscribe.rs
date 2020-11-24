@@ -48,7 +48,7 @@ impl Subscribe {
     pub(crate) fn assemble(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Self, Error> {
         let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
-        let pkid = bytes.get_u16();
+        let pkid = read_u16(&mut bytes)?;
 
         // variable header size = 2 (packet identifier)
         let mut payload_bytes = fixed_header.remaining_len - 2;
@@ -56,7 +56,7 @@ impl Subscribe {
 
         while payload_bytes > 0 {
             let topic_filter = read_mqtt_string(&mut bytes)?;
-            let requested_qos = bytes.get_u8();
+            let requested_qos = read_u8(&mut bytes)?;
             payload_bytes -= topic_filter.len() + 3;
             topics.push(SubscribeTopic {
                 topic_path: topic_filter,

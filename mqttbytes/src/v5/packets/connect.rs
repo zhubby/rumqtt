@@ -29,7 +29,7 @@ impl Connect {
 
         // Variable header
         let protocol_name = read_mqtt_string(&mut bytes)?;
-        let protocol_level = bytes.get_u8();
+        let protocol_level = read_u8(&mut bytes)?;
         if protocol_name != "MQTT" {
             return Err(Error::InvalidProtocol);
         }
@@ -39,9 +39,9 @@ impl Connect {
             num => return Err(Error::InvalidProtocolLevel(num)),
         };
 
-        let connect_flags = bytes.get_u8();
+        let connect_flags = read_u8(&mut bytes)?;
         let clean_session = (connect_flags & 0b10) != 0;
-        let keep_alive = bytes.get_u16();
+        let keep_alive = read_u16(&mut bytes)?;
 
         // Properties in variable header
         let properties = ConnectProperties::extract(&mut bytes)?;
@@ -305,20 +305,20 @@ impl WillProperties {
         let mut cursor = 0;
         // read until cursor reaches property length. properties_len = 0 will skip this loop
         while cursor < properties_len {
-            let prop = bytes.get_u8();
+            let prop = read_u8(&mut bytes)?;
             cursor += 1;
 
             match property(prop)? {
                 PropertyType::WillDelayInterval => {
-                    delay_interval = Some(bytes.get_u32());
+                    delay_interval = Some(read_u32(&mut bytes)?);
                     cursor += 4;
                 }
                 PropertyType::PayloadFormatIndicator => {
-                    payload_format_indicator = Some(bytes.get_u8());
+                    payload_format_indicator = Some(read_u8(&mut bytes)?);
                     cursor += 1;
                 }
                 PropertyType::MessageExpiryInterval => {
-                    message_expiry_interval = Some(bytes.get_u32());
+                    message_expiry_interval = Some(read_u32(&mut bytes)?);
                     cursor += 4;
                 }
                 PropertyType::ContentType => {
@@ -511,31 +511,31 @@ impl ConnectProperties {
         let mut cursor = 0;
         // read until cursor reaches property length. properties_len = 0 will skip this loop
         while cursor < properties_len {
-            let prop = bytes.get_u8();
+            let prop = read_u8(&mut bytes)?;
             cursor += 1;
             match property(prop)? {
                 PropertyType::SessionExpiryInterval => {
-                    session_expiry_interval = Some(bytes.get_u32());
+                    session_expiry_interval = Some(read_u32(&mut bytes)?);
                     cursor += 4;
                 }
                 PropertyType::ReceiveMaximum => {
-                    receive_maximum = Some(bytes.get_u16());
+                    receive_maximum = Some(read_u16(&mut bytes)?);
                     cursor += 2;
                 }
                 PropertyType::MaximumPacketSize => {
-                    max_packet_size = Some(bytes.get_u32());
+                    max_packet_size = Some(read_u32(&mut bytes)?);
                     cursor += 4;
                 }
                 PropertyType::TopicAliasMaximum => {
-                    topic_alias_max = Some(bytes.get_u16());
+                    topic_alias_max = Some(read_u16(&mut bytes)?);
                     cursor += 2;
                 }
                 PropertyType::RequestResponseInformation => {
-                    request_response_info = Some(bytes.get_u8());
+                    request_response_info = Some(read_u8(&mut bytes)?);
                     cursor += 1;
                 }
                 PropertyType::RequestProblemInformation => {
-                    request_problem_info = Some(bytes.get_u8());
+                    request_problem_info = Some(read_u8(&mut bytes)?);
                     cursor += 1;
                 }
                 PropertyType::UserProperty => {
