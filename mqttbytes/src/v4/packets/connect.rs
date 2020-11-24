@@ -1,4 +1,3 @@
-use super::*;
 use crate::*;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -35,7 +34,7 @@ impl Connect {
     }
 
     pub(crate) fn assemble(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Connect, Error> {
-        let variable_header_index = fixed_header.fixed_len;
+        let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
         let protocol_name = read_mqtt_string(&mut bytes)?;
         let protocol_level = bytes.get_u8();
@@ -257,7 +256,7 @@ impl fmt::Debug for Connect {
 
 #[cfg(test)]
 mod test {
-    use crate::*;
+    use super::*;
     use alloc::borrow::ToOwned;
     use alloc::vec;
     use bytes::BytesMut;
@@ -315,11 +314,9 @@ mod test {
         ];
 
         stream.extend_from_slice(&packetstream[..]);
-        let packet = mqtt_read(&mut stream, 100).unwrap();
-        let packet = match packet {
-            Packet::Connect(connect) => connect,
-            packet => panic!("Invalid packet = {:?}", packet),
-        };
+        let fixed_header = parse_fixed_header(stream.iter()).unwrap();
+        let connect_bytes = stream.split_to(fixed_header.frame_length()).freeze();
+        let packet= Connect::assemble(fixed_header, connect_bytes).unwrap();
 
         assert_eq!(
             packet,
@@ -330,36 +327,6 @@ mod test {
                 clean_session: true,
                 last_will: Some(LastWill::new("/a", QoS::AtLeastOnce, "offline")),
                 login: Some(Login::new("rumq", "mq"))
-            }
-        );
-    }
-
-    #[test]
-    fn connack_stitching_works_correctly() {
-        let mut stream = bytes::BytesMut::new();
-        let packetstream = &[
-            0b0010_0000,
-            0x02, // packet type, flags and remaining len
-            0x01,
-            0x00, // variable header. connack flags, connect return code
-            0xDE,
-            0xAD,
-            0xBE,
-            0xEF, // extra packets in the stream
-        ];
-
-        stream.extend_from_slice(&packetstream[..]);
-        let packet = mqtt_read(&mut stream, 100).unwrap();
-        let packet = match packet {
-            Packet::ConnAck(packet) => packet,
-            packet => panic!("Invalid packet = {:?}", packet),
-        };
-
-        assert_eq!(
-            packet,
-            ConnAck {
-                session_present: true,
-                code: ConnectReturnCode::Accepted
             }
         );
     }

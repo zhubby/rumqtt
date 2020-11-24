@@ -1,4 +1,3 @@
-use super::*;
 use crate::*;
 use alloc::vec::Vec;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
@@ -16,7 +15,7 @@ impl SubAck {
     }
 
     pub(crate) fn assemble(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Self, Error> {
-        let variable_header_index = fixed_header.fixed_len;
+        let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
 
         let pkid = bytes.get_u16();
@@ -79,12 +78,9 @@ mod test {
             0xDE, 0xAD, 0xBE, 0xEF, // extra packets in the stream
         ];
         let mut stream = BytesMut::from(&stream[..]);
-
-        let packet = mqtt_read(&mut stream, 100).unwrap();
-        let packet = match packet {
-            Packet::SubAck(packet) => packet,
-            packet => panic!("Invalid packet = {:?}", packet),
-        };
+        let fixed_header = parse_fixed_header(stream.iter()).unwrap();
+        let ack_bytes = stream.split_to(fixed_header.frame_length()).freeze();
+        let packet = SubAck::assemble(fixed_header, ack_bytes).unwrap();
 
         assert_eq!(
             packet,

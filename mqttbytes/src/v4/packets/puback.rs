@@ -17,7 +17,7 @@ impl PubAck {
             return Err(Error::PayloadSizeIncorrect);
         }
 
-        let variable_header_index = fixed_header.fixed_len;
+        let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
         let pkid = bytes.get_u16();
         let puback = PubAck { pkid };
@@ -52,12 +52,10 @@ mod test {
             0xEF, // extra packets in the stream
         ];
         let mut stream = BytesMut::from(&stream[..]);
+        let fixed_header = parse_fixed_header(stream.iter()).unwrap();
+        let ack_bytes = stream.split_to(fixed_header.frame_length()).freeze();
+        let packet = PubAck::assemble(fixed_header, ack_bytes).unwrap();
 
-        let packet = mqtt_read(&mut stream, 100).unwrap();
-        let packet = match packet {
-            Packet::PubAck(packet) => packet,
-            packet => panic!("Invalid packet = {:?}", packet),
-        };
 
         assert_eq!(packet, PubAck { pkid: 10 });
     }

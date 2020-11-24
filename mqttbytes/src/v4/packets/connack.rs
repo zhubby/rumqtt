@@ -1,4 +1,3 @@
-use super::*;
 use crate::*;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
@@ -30,7 +29,7 @@ impl ConnAck {
     }
 
     pub(crate) fn assemble(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Self, Error> {
-        let variable_header_index = fixed_header.fixed_len;
+        let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
 
         if fixed_header.remaining_len != 2 {
@@ -84,9 +83,37 @@ fn connect_return(num: u8) -> Result<ConnectReturnCode, Error> {
 
 #[cfg(test)]
 mod test {
-    use crate::{ConnAck, ConnectReturnCode};
+    use super::*;
     use alloc::vec;
     use bytes::BytesMut;
+
+    #[test]
+    fn connack_stitching_works_correctly() {
+        let mut stream = bytes::BytesMut::new();
+        let packetstream = &[
+            0b0010_0000,
+            0x02, // packet type, flags and remaining len
+            0x01,
+            0x00, // variable header. connack flags, connect return code
+            0xDE,
+            0xAD,
+            0xBE,
+            0xEF, // extra packets in the stream
+        ];
+
+        stream.extend_from_slice(&packetstream[..]);
+        let fixed_header = parse_fixed_header(stream.iter()).unwrap();
+        let connack_bytes = stream.split_to(fixed_header.frame_length()).freeze();
+        let connack = ConnAck::assemble(fixed_header, connack_bytes).unwrap();
+
+        assert_eq!(
+            connack,
+            ConnAck {
+                session_present: true,
+                code: ConnectReturnCode::Accepted
+            }
+        );
+    }
 
     #[test]
     fn write_packet_connack_works() {

@@ -17,7 +17,7 @@ impl PubRel {
             return Err(Error::PayloadSizeIncorrect);
         }
 
-        let variable_header_index = fixed_header.fixed_len;
+        let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
         let pkid = bytes.get_u16();
         let pubrel = PubRel { pkid };

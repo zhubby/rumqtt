@@ -1,4 +1,3 @@
-use super::*;
 use crate::*;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -28,10 +27,6 @@ impl Publish {
         }
     }
 
-    pub fn raw(self) -> Result<PublishRaw, Error> {
-        PublishRaw::from_publish(self)
-    }
-
     pub fn from_bytes<S: Into<String>>(topic: S, qos: QoS, payload: Bytes) -> Publish {
         Publish {
             dup: false,
@@ -48,7 +43,7 @@ impl Publish {
         let dup = (fixed_header.byte1 & 0b1000) != 0;
         let retain = (fixed_header.byte1 & 0b0001) != 0;
 
-        let variable_header_index = fixed_header.fixed_len;
+        let variable_header_index = fixed_header.fixed_header_len;
         payload.advance(variable_header_index);
         let topic = read_mqtt_string(&mut payload)?;
 
@@ -151,11 +146,9 @@ mod test {
         ];
 
         let mut stream = BytesMut::from(&stream[..]);
-        let packet = mqtt_read(&mut stream, 100).unwrap();
-        let packet = match packet {
-            Packet::Publish(packet) => packet,
-            packet => panic!("Invalid packet = {:?}", packet),
-        };
+        let fixed_header = parse_fixed_header(stream.iter()).unwrap();
+        let publish_bytes = stream.split_to(fixed_header.frame_length()).freeze();
+        let packet = Publish::assemble(fixed_header, publish_bytes).unwrap();
 
         let payload = &[0xF1, 0xF2, 0xF3, 0xF4];
         assert_eq!(
@@ -190,11 +183,9 @@ mod test {
         ];
 
         let mut stream = BytesMut::from(&stream[..]);
-        let packet = mqtt_read(&mut stream, 100).unwrap();
-        let packet = match packet {
-            Packet::Publish(packet) => packet,
-            packet => panic!("Invalid packet = {:?}", packet),
-        };
+        let fixed_header = parse_fixed_header(stream.iter()).unwrap();
+        let publish_bytes = stream.split_to(fixed_header.frame_length()).freeze();
+        let packet = Publish::assemble(fixed_header, publish_bytes).unwrap();
 
         assert_eq!(
             packet,
