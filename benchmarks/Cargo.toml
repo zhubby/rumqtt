@@ -14,7 +14,7 @@ mqttbytes = { path = "../mqttbytes" }
 mqtt4bytes = { path = "../mqtt4bytes" }
 rumqttc = { path = "../rumqttc" }
 rumqttlog = { path = "../rumqttlog" }
-tokio = { version = "=0.2.22", features = ["full"] }
+tokio = { version = "=0.3", features = ["full"] }
 futures = { version = "0.3", features = ["compat"] }	
 bytes = "0.6"
 async-channel = "1.4"

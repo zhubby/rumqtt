@@ -1,7 +1,6 @@
 use bytes::{Buf, BytesMut};
 use mqttbytes::v4::{mqtt_read, Publish};
 use mqttbytes::QoS;
-use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
 mod common;
@@ -45,18 +44,8 @@ fn main() {
 
     // --------------------------- results ---------------------------------------
 
-    // println!(
-    //     "
-    //     Id = mqttbytes,
-    //     Messages = {},
-    //     Payload (bytes) = {},
-    //     Total size (GB) = {},
-    //     Write Throughput (GB/sec) = {}
-    //     Read Throughput (GB/sec) = {}",
-    //     count, payload_size, total_size_gb, write_throughput, read_throughput
-    // );
-    let print = Print {
-        id: "mqttbytesparser".to_owned(),
+    let print = common::Print {
+        id: "mqttbytes".to_owned(),
         messages: count,
         payload_size,
         total_size_gb,
@@ -77,14 +66,4 @@ fn generate_data(count: usize, payload_size: usize) -> Vec<Publish> {
     }
 
     data
-}
-
-#[derive(Serialize, Deserialize)]
-struct Print {
-    id: String,
-    messages: usize,
-    payload_size: usize,
-    total_size_gb: f32,
-    write_throughput_gpbs: f32,
-    read_throughput_gpbs: f32,
 }
