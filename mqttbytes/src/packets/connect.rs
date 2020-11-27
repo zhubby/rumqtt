@@ -126,7 +126,6 @@ impl Connect {
 
     pub fn write(&self, buffer: &mut BytesMut) -> Result<usize, Error> {
         let len = self.len();
-        buffer.reserve(len);
         buffer.put_u8(0b0001_0000);
         let count = write_remaining_length(buffer, len)?;
         write_mqtt_string(buffer, "MQTT");

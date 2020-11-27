@@ -41,7 +41,6 @@ impl Unsubscribe {
             .iter()
             .fold(0, |s, ref topic| s + topic.len() + 2);
 
-        payload.reserve(remaining_len + 8);
         payload.put_u8(0xA2);
         let remaining_len_bytes = write_remaining_length(payload, remaining_len)?;
         payload.put_u16(self.pkid);

@@ -14,10 +14,10 @@ fn main() {
     let payload_size = 1024;
     let data = generate_data(count, payload_size);
     let guard = pprof::ProfilerGuard::new(100).unwrap();
+    let mut output = BytesMut::with_capacity(10 * 1024);
 
     // ------------------------- write throughput -------------------------------
     let start = Instant::now();
-    let mut output = BytesMut::new();
     for publish in data.into_iter() {
         publish.write(&mut output, Protocol::V4).unwrap();
     }

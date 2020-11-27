@@ -53,7 +53,11 @@ impl PubRec {
         len
     }
 
-    pub fn read(fixed_header: FixedHeader, mut bytes: Bytes, protocol: Protocol) -> Result<Self, Error> {
+    pub fn read(
+        fixed_header: FixedHeader,
+        mut bytes: Bytes,
+        protocol: Protocol,
+    ) -> Result<Self, Error> {
         let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
         let pkid = read_u16(&mut bytes)?;
@@ -74,10 +78,9 @@ impl PubRec {
             });
         }
 
-
         let properties = match protocol {
             Protocol::V5 => PubRecProperties::extract(&mut bytes)?,
-            Protocol::V4 => None
+            Protocol::V4 => None,
         };
 
         let puback = PubRec {
@@ -89,10 +92,8 @@ impl PubRec {
         Ok(puback)
     }
 
-
     pub fn write(&self, buffer: &mut BytesMut, protocol: Protocol) -> Result<usize, Error> {
         let len = self.len(protocol);
-        buffer.reserve(len);
         buffer.put_u8(0x50);
         let count = write_remaining_length(buffer, len)?;
         buffer.put_u16(self.pkid);

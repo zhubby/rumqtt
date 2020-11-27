@@ -91,9 +91,7 @@ impl ConnAck {
     }
 
     pub fn write(&self, buffer: &mut BytesMut, protocol: Protocol) -> Result<usize, Error> {
-        // TODO reserve buffer of fixed header in all the packets for perf
         let len = self.len(protocol);
-        buffer.reserve(len);
         buffer.put_u8(0x20);
 
         let count = write_remaining_length(buffer, len)?;

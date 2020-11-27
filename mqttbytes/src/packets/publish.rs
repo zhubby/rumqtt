@@ -65,7 +65,11 @@ impl Publish {
         len
     }
 
-    pub fn read(fixed_header: FixedHeader, mut bytes: Bytes, protocol: Protocol) -> Result<Self, Error> {
+    pub fn read(
+        fixed_header: FixedHeader,
+        mut bytes: Bytes,
+        protocol: Protocol,
+    ) -> Result<Self, Error> {
         let qos = qos((fixed_header.byte1 & 0b0110) >> 1)?;
         let dup = (fixed_header.byte1 & 0b1000) != 0;
         let retain = (fixed_header.byte1 & 0b0001) != 0;
@@ -86,7 +90,7 @@ impl Publish {
 
         let properties = match protocol {
             Protocol::V5 => PublishProperties::extract(&mut bytes)?,
-            Protocol::V4 => None
+            Protocol::V4 => None,
         };
 
         let publish = Publish {
@@ -104,12 +108,12 @@ impl Publish {
 
     pub fn write(&self, buffer: &mut BytesMut, protocol: Protocol) -> Result<usize, Error> {
         let len = self.len(protocol);
-        buffer.reserve(len);
 
         let dup = self.dup as u8;
         let qos = self.qos as u8;
         let retain = self.retain as u8;
         buffer.put_u8(0b0011_0000 | retain | qos << 1 | dup << 3);
+
         let count = write_remaining_length(buffer, len)?;
         write_mqtt_string(buffer, self.topic.as_str());
 
@@ -130,7 +134,6 @@ impl Publish {
                 }
             };
         }
-
 
         buffer.extend_from_slice(&self.payload);
 
@@ -418,7 +421,7 @@ mod test {
     }
 
     #[test]
-        fn v4_qos1_publish_encoding_works() {
+    fn v4_qos1_publish_encoding_works() {
         let publish = Publish {
             dup: false,
             qos: QoS::AtLeastOnce,
@@ -426,7 +429,7 @@ mod test {
             topic: "a/b".to_owned(),
             pkid: 10,
             payload: Bytes::from(vec![0xF1, 0xF2, 0xF3, 0xF4]),
-            properties: None
+            properties: None,
         };
 
         let mut buf = BytesMut::new();
@@ -461,7 +464,7 @@ mod test {
             topic: "a/b".to_owned(),
             pkid: 0,
             payload: Bytes::from(vec![0xE1, 0xE2, 0xE3, 0xE4]),
-            properties: None
+            properties: None,
         };
 
         let mut buf = BytesMut::new();
@@ -534,7 +537,6 @@ mod test {
         let mut stream = bytes::BytesMut::new();
         let packetstream = &sample_v5_bytes();
         stream.extend_from_slice(&packetstream[..]);
-
 
         let fixed_header = parse_fixed_header(stream.iter()).unwrap();
         let publish_bytes = stream.split_to(fixed_header.frame_length()).freeze();

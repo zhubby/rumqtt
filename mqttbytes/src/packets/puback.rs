@@ -54,7 +54,11 @@ impl PubAck {
         len
     }
 
-    pub fn read(fixed_header: FixedHeader, mut bytes: Bytes, protocol: Protocol) -> Result<Self, Error> {
+    pub fn read(
+        fixed_header: FixedHeader,
+        mut bytes: Bytes,
+        protocol: Protocol,
+    ) -> Result<Self, Error> {
         let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
         let pkid = read_u16(&mut bytes)?;
@@ -80,7 +84,7 @@ impl PubAck {
 
         let properties = match protocol {
             Protocol::V5 => PubAckProperties::extract(&mut bytes)?,
-            Protocol::V4 => None
+            Protocol::V4 => None,
         };
 
         let puback = PubAck {
@@ -94,8 +98,8 @@ impl PubAck {
 
     pub fn write(&self, buffer: &mut BytesMut, protocol: Protocol) -> Result<usize, Error> {
         let len = self.len(protocol);
-        buffer.reserve(len);
         buffer.put_u8(0x40);
+
         let count = write_remaining_length(buffer, len)?;
         buffer.put_u16(self.pkid);
 
@@ -234,8 +238,14 @@ mod test {
         let ack_bytes = stream.split_to(fixed_header.frame_length()).freeze();
         let packet = PubAck::read(fixed_header, ack_bytes, Protocol::V4).unwrap();
 
-
-        assert_eq!(packet, PubAck { pkid: 10, reason: PubAckReason::Success, properties: None });
+        assert_eq!(
+            packet,
+            PubAck {
+                pkid: 10,
+                reason: PubAckReason::Success,
+                properties: None
+            }
+        );
     }
 
     fn v5_sample() -> PubAck {
@@ -334,7 +344,6 @@ mod test {
         let mut stream = bytes::BytesMut::new();
         let packetstream = &v5_sample3_bytes();
         stream.extend_from_slice(&packetstream[..]);
-
 
         let fixed_header = parse_fixed_header(stream.iter()).unwrap();
         let puback_bytes = stream.split_to(fixed_header.frame_length()).freeze();
