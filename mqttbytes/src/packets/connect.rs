@@ -25,7 +25,7 @@ pub struct Connect {
 impl Connect {
     pub fn new<S: Into<String>>(id: S) -> Connect {
         Connect {
-            protocol: Protocol::V5,
+            protocol: Protocol::V4,
             keep_alive: 10,
             properties: None,
             client_id: id.into(),
