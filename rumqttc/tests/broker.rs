@@ -1,4 +1,4 @@
-use mqtt4bytes::*;
+use mqttbytes::*;
 use std::collections::VecDeque;
 use std::io;
 use std::time::Duration;
@@ -14,6 +14,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 pub struct Broker {
     pub(crate) framed: Network,
     pub(crate) incoming: VecDeque<Packet>,
+    protocol: Protocol,
     outgoing_tx: Sender<Packet>,
     outgoing_rx: Receiver<Packet>,
 }
@@ -28,33 +29,30 @@ impl Broker {
         let mut framed = Network::new(stream, 10 * 1024);
         let mut incoming = VecDeque::new();
         let (outgoing_tx, outgoing_rx) = bounded(10);
-        framed.readb(&mut incoming).await.unwrap();
 
-        match incoming.pop_front().unwrap() {
-            Packet::Connect(_) => {
-                let connack = match connack {
-                    0 => ConnAck::new(ConnectReturnCode::Accepted, false),
-                    1 => ConnAck::new(ConnectReturnCode::BadUsernamePassword, false),
-                    _ => {
-                        return Broker {
-                            framed,
-                            incoming,
-                            outgoing_tx,
-                            outgoing_rx,
-                        }
-                    }
-                };
+        let connect = framed.read_connect().await.unwrap();
+        let protocol = connect.protocol;
+        framed.set_protocol(protocol);
 
-                framed.connack(connack).await.unwrap();
-            }
+        let connack = match connack {
+            0 => ConnAck::new(ConnectReturnCode::Success, false),
+            1 => ConnAck::new(ConnectReturnCode::BadUserNamePassword, false),
             _ => {
-                panic!("Expecting connect packet");
+                return Broker {
+                    framed,
+                    incoming,
+                    protocol,
+                    outgoing_tx,
+                    outgoing_rx,
+                }
             }
-        }
+        };
 
+        framed.connack(connack).await.unwrap();
         Broker {
             framed,
             incoming,
+            protocol,
             outgoing_tx,
             outgoing_rx,
         }
@@ -163,6 +161,7 @@ impl Broker {
 /// advantage of pre-allocation, buffering and vectorization when
 /// appropriate to achieve performance
 pub struct Network {
+    protocol: Protocol,
     /// Socket for IO
     socket: Box<dyn N>,
     /// Buffered reads
@@ -179,12 +178,17 @@ impl Network {
     pub fn new(socket: impl N + 'static, max_incoming_size: usize) -> Network {
         let socket = Box::new(socket) as Box<dyn N>;
         Network {
+            protocol: Protocol::V4,
             socket,
             read: BytesMut::with_capacity(10 * 1024),
             write: BytesMut::with_capacity(10 * 1024),
             max_incoming_size,
             max_readb_count: 10,
         }
+    }
+
+    pub fn set_protocol(&mut self, protocol: Protocol) {
+        self.protocol = protocol;
     }
 
     /// Reads more than 'required' bytes to frame a packet into self.read buffer
@@ -215,7 +219,7 @@ impl Network {
 
     pub async fn connack(&mut self, connack: ConnAck) -> Result<usize, io::Error> {
         let mut write = BytesMut::new();
-        let len = match connack.write(&mut write) {
+        let len = match connack.write(&mut write, self.protocol) {
             Ok(size) => size,
             Err(e) => return Err(io::Error::new(io::ErrorKind::InvalidData, e.to_string())),
         };
@@ -224,12 +228,25 @@ impl Network {
         Ok(len)
     }
 
+    pub async fn read_connect(&mut self) -> Result<Connect, io::Error> {
+        loop {
+            match mqttbytes::read_connect(&mut self.read, self.max_incoming_size) {
+                Ok(packet) => return Ok(packet),
+                // Wait for more bytes until a frame can be created
+                Err(Error::InsufficientBytes(required)) => {
+                    self.read_bytes(required).await?;
+                }
+                Err(e) => return Err(io::Error::new(io::ErrorKind::InvalidData, e.to_string())),
+            };
+        }
+    }
+
     /// Read packets in bulk. This allow replies to be in bulk. This method is used
     /// after the connection is established to read a bunch of incoming packets
     pub async fn readb(&mut self, incoming: &mut VecDeque<Incoming>) -> Result<(), io::Error> {
         let mut count = 0;
         loop {
-            match mqtt_read(&mut self.read, self.max_incoming_size) {
+            match mqttbytes::read(&mut self.read, self.protocol, self.max_incoming_size) {
                 Ok(packet) => {
                     incoming.push_back(packet);
                     count += 1;
@@ -252,8 +269,8 @@ impl Network {
     async fn write(&mut self, packet: Packet) -> Result<Outgoing, Error> {
         let outgoing = outgoing(&packet);
         match packet {
-            Packet::Publish(packet) => packet.write(&mut self.write)?,
-            Packet::PubRel(packet) => packet.write(&mut self.write)?,
+            Packet::Publish(packet) => packet.write(&mut self.write, self.protocol)?,
+            Packet::PubRel(packet) => packet.write(&mut self.write, self.protocol)?,
             Packet::PingReq => {
                 let packet = PingReq;
                 packet.write(&mut self.write)?
@@ -262,17 +279,17 @@ impl Network {
                 let packet = PingResp;
                 packet.write(&mut self.write)?
             }
-            Packet::Subscribe(packet) => packet.write(&mut self.write)?,
-            Packet::SubAck(packet) => packet.write(&mut self.write)?,
+            Packet::Subscribe(packet) => packet.write(&mut self.write, self.protocol)?,
+            Packet::SubAck(packet) => packet.write(&mut self.write, self.protocol)?,
             Packet::Unsubscribe(packet) => packet.write(&mut self.write)?,
             Packet::UnsubAck(packet) => packet.write(&mut self.write)?,
             Packet::Disconnect => {
                 let packet = Disconnect;
                 packet.write(&mut self.write)?
             }
-            Packet::PubAck(packet) => packet.write(&mut self.write)?,
-            Packet::PubRec(packet) => packet.write(&mut self.write)?,
-            Packet::PubComp(packet) => packet.write(&mut self.write)?,
+            Packet::PubAck(packet) => packet.write(&mut self.write, self.protocol)?,
+            Packet::PubRec(packet) => packet.write(&mut self.write, self.protocol)?,
+            Packet::PubComp(packet) => packet.write(&mut self.write, self.protocol)?,
             _ => unimplemented!(),
         };
 

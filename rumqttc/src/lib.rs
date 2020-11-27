@@ -112,7 +112,7 @@ mod tls;
 pub use async_channel::{SendError, Sender, TrySendError};
 pub use client::{AsyncClient, Client, ClientError, Connection};
 pub use eventloop::{ConnectionError, Event, EventLoop};
-pub use mqtt4bytes::*;
+pub use mqttbytes::*;
 pub use state::{MqttState, StateError};
 pub use tokio_rustls::rustls::internal::pemfile::{certs, pkcs8_private_keys, rsa_private_keys};
 pub use tokio_rustls::rustls::ClientConfig;
@@ -149,7 +149,6 @@ pub enum Outgoing {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Request {
     Publish(Publish),
-    PublishRaw(PublishRaw),
     PubAck(PubAck),
     PubRec(PubRec),
     PubComp(PubComp),
@@ -203,6 +202,8 @@ pub struct MqttOptions {
     broker_addr: String,
     /// broker port
     port: u16,
+    /// Protocol version
+    protocol: Protocol,
     /// keep alive time to send pingreq to broker when the connection is idle
     keep_alive: Duration,
     /// clean (or) persistent session
@@ -255,6 +256,7 @@ impl MqttOptions {
         MqttOptions {
             broker_addr: host.into(),
             port,
+            protocol: Protocol::V4,
             keep_alive: Duration::from_secs(60),
             clean_session: true,
             client_id: id,
@@ -279,6 +281,11 @@ impl MqttOptions {
     /// Broker address
     pub fn broker_address(&self) -> (String, u16) {
         (self.broker_addr.clone(), self.port)
+    }
+
+    /// Protocol version
+    pub fn protocol(&self) -> Protocol {
+        self.protocol
     }
 
     pub fn set_last_will(&mut self, will: LastWill) -> &mut Self {

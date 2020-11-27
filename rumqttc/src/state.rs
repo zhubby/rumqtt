@@ -1,7 +1,7 @@
 use crate::{Event, Incoming, Outgoing, Request};
 
 use bytes::BytesMut;
-use mqtt4bytes::*;
+use mqttbytes::*;
 use std::collections::VecDeque;
 use std::{io, mem, time::Instant};
 
@@ -32,11 +32,11 @@ pub enum StateError {
     #[error("Timeout while waiting to resolve collision")]
     CollisionTimeout,
     #[error("Mqtt serialization/deserialization error")]
-    Serialization(mqtt4bytes::Error),
+    Serialization(mqttbytes::Error),
 }
 
-impl From<mqtt4bytes::Error> for StateError {
-    fn from(e: mqtt4bytes::Error) -> StateError {
+impl From<mqttbytes::Error> for StateError {
+    fn from(e: mqttbytes::Error) -> StateError {
         StateError::Serialization(e)
     }
 }
@@ -49,6 +49,7 @@ impl From<mqtt4bytes::Error> for StateError {
 // Any missing acks from the broker are detected during the next recycled use of packet ids
 #[derive(Debug, Clone)]
 pub struct MqttState {
+    protocol: Protocol,
     /// Status of last ping
     pub await_pingresp: bool,
     /// Collision ping count. Collisions stop user requests
@@ -83,8 +84,9 @@ impl MqttState {
     /// Creates new mqtt state. Same state should be used during a
     /// connection for persistent sessions while new state should
     /// instantiated for clean sessions
-    pub fn new(max_inflight: u16) -> Self {
+    pub fn new(protocol: Protocol, max_inflight: u16) -> Self {
         MqttState {
+            protocol,
             await_pingresp: false,
             collision_ping_count: 0,
             last_incoming: Instant::now(),
@@ -197,13 +199,13 @@ impl MqttState {
             QoS::AtMostOnce => Ok(()),
             QoS::AtLeastOnce => {
                 let pkid = publish.pkid;
-                PubAck::new(pkid).write(&mut self.write)?;
+                PubAck::new(pkid).write(&mut self.write, self.protocol)?;
 
                 Ok(())
             }
             QoS::ExactlyOnce => {
                 let pkid = publish.pkid;
-                PubRec::new(pkid).write(&mut self.write)?;
+                PubRec::new(pkid).write(&mut self.write, self.protocol)?;
                 self.incoming_pub[pkid as usize] = Some(pkid);
                 Ok(())
             }
@@ -212,7 +214,7 @@ impl MqttState {
 
     fn handle_incoming_puback(&mut self, puback: &PubAck) -> Result<(), StateError> {
         if let Some(publish) = self.check_collision(puback.pkid) {
-            publish.write(&mut self.write)?;
+            publish.write(&mut self.write, self.protocol)?;
             let event = Event::Outgoing(Outgoing::Publish(publish.pkid));
             self.events.push_back(event);
             self.collision_ping_count = 0;
@@ -235,7 +237,7 @@ impl MqttState {
             Some(_) => {
                 // NOTE: Inflight - 1 for qos2 in comp
                 self.outgoing_rel[pubrec.pkid as usize] = Some(pubrec.pkid);
-                PubRel::new(pubrec.pkid).write(&mut self.write)?;
+                PubRel::new(pubrec.pkid).write(&mut self.write, self.protocol)?;
 
                 let event = Event::Outgoing(Outgoing::PubRel(pubrec.pkid));
                 self.events.push_back(event);
@@ -251,7 +253,7 @@ impl MqttState {
     fn handle_incoming_pubrel(&mut self, pubrel: &PubRel) -> Result<(), StateError> {
         match mem::replace(&mut self.incoming_pub[pubrel.pkid as usize], None) {
             Some(_) => {
-                PubComp::new(pubrel.pkid).write(&mut self.write)?;
+                PubComp::new(pubrel.pkid).write(&mut self.write, self.protocol)?;
                 let event = Event::Outgoing(Outgoing::PubComp(pubrel.pkid));
                 self.events.push_back(event);
                 Ok(())
@@ -265,7 +267,7 @@ impl MqttState {
 
     fn handle_incoming_pubcomp(&mut self, pubcomp: &PubComp) -> Result<(), StateError> {
         if let Some(publish) = self.check_collision(pubcomp.pkid) {
-            publish.write(&mut self.write)?;
+            publish.write(&mut self.write, self.protocol)?;
             let event = Event::Outgoing(Outgoing::Publish(publish.pkid));
             self.events.push_back(event);
             self.collision_ping_count = 0;
@@ -303,7 +305,7 @@ impl MqttState {
             publish.payload.len()
         );
 
-        publish.write(&mut self.write)?;
+        publish.write(&mut self.write, self.protocol)?;
         let event = Event::Outgoing(Outgoing::Publish(publish.pkid));
         self.events.push_back(event);
         Ok(())
@@ -313,7 +315,7 @@ impl MqttState {
         let pubrel = self.save_pubrel(pubrel)?;
 
         debug!("Pubrel. Pkid = {}", pubrel.pkid);
-        PubRel::new(pubrel.pkid).write(&mut self.write)?;
+        PubRel::new(pubrel.pkid).write(&mut self.write, self.protocol)?;
 
         let event = Event::Outgoing(Outgoing::PubRel(pubrel.pkid));
         self.events.push_back(event);
@@ -360,11 +362,11 @@ impl MqttState {
         subscription.pkid = pkid;
 
         debug!(
-            "Subscribe. Topics = {:?}, Pkid = {:?}",
-            subscription.topics, subscription.pkid
+            "Subscribe. Filters = {:?}, Pkid = {:?}",
+            subscription.filters, subscription.pkid
         );
 
-        subscription.write(&mut self.write)?;
+        subscription.write(&mut self.write, self.protocol)?;
         let event = Event::Outgoing(Outgoing::Subscribe(subscription.pkid));
         self.events.push_back(event);
         Ok(())
@@ -480,7 +482,7 @@ impl MqttState {
 mod test {
     use super::{MqttState, StateError};
     use crate::{Incoming, MqttOptions, Request};
-    use mqtt4bytes::*;
+    use mqttbytes::*;
 
     fn build_outgoing_publish(qos: QoS) -> Publish {
         let topic = "hello/world".to_owned();
@@ -501,13 +503,13 @@ mod test {
         publish
     }
 
-    fn build_mqttstate() -> MqttState {
-        MqttState::new(100)
+    fn build_mqttstate(protocol: Protocol) -> MqttState {
+        MqttState::new(protocol, 100)
     }
 
     #[test]
     fn next_pkid_increments_as_expected() {
-        let mut mqtt = build_mqttstate();
+        let mut mqtt = build_mqttstate(Protocol::V4);
 
         for i in 1..=100 {
             let pkid = mqtt.next_pkid();
@@ -524,7 +526,7 @@ mod test {
 
     #[test]
     fn outgoing_publish_should_set_pkid_and_add_publish_to_queue() {
-        let mut mqtt = build_mqttstate();
+        let mut mqtt = build_mqttstate(Protocol::V4);
 
         // QoS0 Publish
         let publish = build_outgoing_publish(QoS::AtMostOnce);
@@ -563,7 +565,7 @@ mod test {
 
     #[test]
     fn incoming_publish_should_be_added_to_queue_correctly() {
-        let mut mqtt = build_mqttstate();
+        let mut mqtt = build_mqttstate(Protocol::V4);
 
         // QoS0, 1, 2 Publishes
         let publish1 = build_incoming_publish(QoS::AtMostOnce, 1);
@@ -582,11 +584,11 @@ mod test {
 
     #[test]
     fn incoming_qos2_publish_should_send_rec_to_network_and_publish_to_user() {
-        let mut mqtt = build_mqttstate();
+        let mut mqtt = build_mqttstate(Protocol::V4);
         let publish = build_incoming_publish(QoS::ExactlyOnce, 1);
 
         mqtt.handle_incoming_publish(&publish).unwrap();
-        let packet = mqtt_read(&mut mqtt.write, 10 * 1024).unwrap();
+        let packet = mqttbytes::read(&mut mqtt.write, Protocol::V4, 10 * 1024).unwrap();
         match packet {
             Packet::PubRec(pubrec) => assert_eq!(pubrec.pkid, 1),
             _ => panic!("Invalid network request: {:?}", packet),
@@ -595,7 +597,7 @@ mod test {
 
     #[test]
     fn incoming_puback_should_remove_correct_publish_from_queue() {
-        let mut mqtt = build_mqttstate();
+        let mut mqtt = build_mqttstate(Protocol::V4);
 
         let publish1 = build_outgoing_publish(QoS::AtLeastOnce);
         let publish2 = build_outgoing_publish(QoS::ExactlyOnce);
@@ -616,7 +618,7 @@ mod test {
 
     #[test]
     fn incoming_pubrec_should_release_publish_from_queue_and_add_relid_to_rel_queue() {
-        let mut mqtt = build_mqttstate();
+        let mut mqtt = build_mqttstate(Protocol::V4);
 
         let publish1 = build_outgoing_publish(QoS::AtLeastOnce);
         let publish2 = build_outgoing_publish(QoS::ExactlyOnce);
@@ -637,18 +639,18 @@ mod test {
 
     #[test]
     fn incoming_pubrec_should_send_release_to_network_and_nothing_to_user() {
-        let mut mqtt = build_mqttstate();
+        let mut mqtt = build_mqttstate(Protocol::V4);
 
         let publish = build_outgoing_publish(QoS::ExactlyOnce);
         mqtt.outgoing_publish(publish).unwrap();
-        let packet = mqtt_read(&mut mqtt.write, 10 * 1024).unwrap();
+        let packet = mqttbytes::read(&mut mqtt.write, Protocol::V4, 10 * 1024).unwrap();
         match packet {
             Packet::Publish(publish) => assert_eq!(publish.pkid, 1),
             packet => panic!("Invalid network request: {:?}", packet),
         }
 
         mqtt.handle_incoming_pubrec(&PubRec::new(1)).unwrap();
-        let packet = mqtt_read(&mut mqtt.write, 10 * 1024).unwrap();
+        let packet = mqttbytes::read(&mut mqtt.write, Protocol::V4, 10 * 1024).unwrap();
         match packet {
             Packet::PubRel(pubrel) => assert_eq!(pubrel.pkid, 1),
             packet => panic!("Invalid network request: {:?}", packet),
@@ -657,18 +659,18 @@ mod test {
 
     #[test]
     fn incoming_pubrel_should_send_comp_to_network_and_nothing_to_user() {
-        let mut mqtt = build_mqttstate();
+        let mut mqtt = build_mqttstate(Protocol::V4);
         let publish = build_incoming_publish(QoS::ExactlyOnce, 1);
 
         mqtt.handle_incoming_publish(&publish).unwrap();
-        let packet = mqtt_read(&mut mqtt.write, 10 * 1024).unwrap();
+        let packet = mqttbytes::read(&mut mqtt.write, Protocol::V4, 10 * 1024).unwrap();
         match packet {
             Packet::PubRec(pubrec) => assert_eq!(pubrec.pkid, 1),
             packet => panic!("Invalid network request: {:?}", packet),
         }
 
         mqtt.handle_incoming_pubrel(&PubRel::new(1)).unwrap();
-        let packet = mqtt_read(&mut mqtt.write, 10 * 1024).unwrap();
+        let packet = mqttbytes::read(&mut mqtt.write, Protocol::V4, 10 * 1024).unwrap();
         match packet {
             Packet::PubComp(pubcomp) => assert_eq!(pubcomp.pkid, 1),
             packet => panic!("Invalid network request: {:?}", packet),
@@ -677,7 +679,7 @@ mod test {
 
     #[test]
     fn incoming_pubcomp_should_release_correct_pkid_from_release_queue() {
-        let mut mqtt = build_mqttstate();
+        let mut mqtt = build_mqttstate(Protocol::V4);
         let publish = build_outgoing_publish(QoS::ExactlyOnce);
 
         mqtt.outgoing_publish(publish).unwrap();
@@ -689,7 +691,7 @@ mod test {
 
     #[test]
     fn outgoing_ping_handle_should_throw_errors_for_no_pingresp() {
-        let mut mqtt = build_mqttstate();
+        let mut mqtt = build_mqttstate(Protocol::V4);
         let mut opts = MqttOptions::new("test", "localhost", 1883);
         opts.set_keep_alive(10);
         mqtt.outgoing_ping().unwrap();
@@ -711,7 +713,7 @@ mod test {
 
     #[test]
     fn outgoing_ping_handle_should_succeed_if_pingresp_is_received() {
-        let mut mqtt = build_mqttstate();
+        let mut mqtt = build_mqttstate(Protocol::V4);
 
         let mut opts = MqttOptions::new("test", "localhost", 1883);
         opts.set_keep_alive(10);

@@ -31,6 +31,17 @@ impl Subscribe {
         }
     }
 
+    pub fn new_many<T>(topics: T) -> Subscribe
+    where
+        T: IntoIterator<Item = SubscribeFilter>,
+    {
+        Subscribe {
+            pkid: 0,
+            filters: topics.into_iter().collect(),
+            properties: None,
+        }
+    }
+
     pub fn empty_subscribe() -> Subscribe {
         Subscribe {
             pkid: 0,
@@ -69,14 +80,18 @@ impl Subscribe {
         len
     }
 
-    pub fn read(fixed_header: FixedHeader, mut bytes: Bytes, protocol: Protocol) -> Result<Self, Error> {
+    pub fn read(
+        fixed_header: FixedHeader,
+        mut bytes: Bytes,
+        protocol: Protocol,
+    ) -> Result<Self, Error> {
         let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
 
         let pkid = read_u16(&mut bytes)?;
         let properties = match protocol {
             Protocol::V5 => SubscribeProperties::extract(&mut bytes)?,
-            Protocol::V4 => None
+            Protocol::V4 => None,
         };
 
         // variable header size = 2 (packet identifier)
@@ -367,9 +382,9 @@ mod test {
             Subscribe {
                 pkid: 260,
                 filters: vec![
-                    SubscribeFilter::new("a/+".to_owned(),QoS::AtMostOnce),
-                    SubscribeFilter::new("#".to_owned(),QoS::AtLeastOnce),
-                    SubscribeFilter::new("a/b/c".to_owned(),QoS::ExactlyOnce)
+                    SubscribeFilter::new("a/+".to_owned(), QoS::AtMostOnce),
+                    SubscribeFilter::new("#".to_owned(), QoS::AtLeastOnce),
+                    SubscribeFilter::new("a/b/c".to_owned(), QoS::ExactlyOnce)
                 ],
                 properties: None
             }
@@ -381,11 +396,11 @@ mod test {
         let subscribe = Subscribe {
             pkid: 260,
             filters: vec![
-                SubscribeFilter::new("a/+".to_owned(),QoS::AtMostOnce),
-                SubscribeFilter::new("#".to_owned(),QoS::AtLeastOnce),
-                SubscribeFilter::new("a/b/c".to_owned(),QoS::ExactlyOnce)
+                SubscribeFilter::new("a/+".to_owned(), QoS::AtMostOnce),
+                SubscribeFilter::new("#".to_owned(), QoS::AtLeastOnce),
+                SubscribeFilter::new("a/b/c".to_owned(), QoS::ExactlyOnce),
             ],
-            properties: None
+            properties: None,
         };
 
         let mut buf = BytesMut::new();

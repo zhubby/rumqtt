@@ -1,6 +1,7 @@
 extern crate alloc;
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
+use core::fmt::{self, Display, Formatter};
 use std::slice::Iter;
 
 mod packets;
@@ -331,4 +332,10 @@ fn read_u32(stream: &mut Bytes) -> Result<u32, Error> {
     }
 
     Ok(stream.get_u32())
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "Error = {:?}", self)
+    }
 }

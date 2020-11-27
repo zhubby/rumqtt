@@ -3,7 +3,7 @@ use crate::{tls, Incoming, MqttState, Packet, Request, StateError};
 use crate::{MqttOptions, Outgoing};
 
 use async_channel::{bounded, Receiver, Sender};
-use mqtt4bytes::*;
+use mqttbytes::*;
 use tokio::net::TcpStream;
 use tokio::select;
 use tokio::stream::{Stream, StreamExt};
@@ -21,7 +21,7 @@ pub enum ConnectionError {
     #[error("Timeout")]
     Timeout(#[from] Elapsed),
     #[error("Packet parsing error: {0}")]
-    Mqtt4Bytes(mqtt4bytes::Error),
+    MqttBytes(mqttbytes::Error),
     #[error("Network: {0}")]
     Network(#[from] tls::Error),
     #[error("I/O: {0}")]
@@ -74,10 +74,11 @@ impl EventLoop {
         let pending = Vec::new();
         let pending = pending.into_iter();
         let max_inflight = options.inflight;
+        let protocol = options.protocol;
 
         EventLoop {
             options,
-            state: MqttState::new(max_inflight),
+            state: MqttState::new(protocol, max_inflight),
             requests_tx,
             requests_rx,
             pending,
@@ -266,12 +267,12 @@ async fn connect(options: &MqttOptions) -> Result<(Network, Incoming), Connectio
 async fn network_connect(options: &MqttOptions) -> Result<Network, ConnectionError> {
     let network = if options.ca.is_some() || options.tls_client_config.is_some() {
         let socket = tls::tls_connect(options).await?;
-        Network::new(socket, options.max_incoming_packet_size)
+        Network::new(socket, options.protocol, options.max_incoming_packet_size)
     } else {
         let addr = options.broker_addr.as_str();
         let port = options.port;
         let socket = TcpStream::connect((addr, port)).await?;
-        Network::new(socket, options.max_incoming_packet_size)
+        Network::new(socket, options.protocol, options.max_incoming_packet_size)
     };
 
     Ok(network)
@@ -305,7 +306,7 @@ async fn mqtt_connect(
     // wait for 'timeout' time to validate connack
     let packet = time::timeout(Duration::from_secs(options.connection_timeout()), async {
         let packet = match network.read().await? {
-            Incoming::ConnAck(connack) if connack.code == ConnectReturnCode::Accepted => {
+            Incoming::ConnAck(connack) if connack.code == ConnectReturnCode::Success => {
                 Packet::ConnAck(connack)
             }
             Incoming::ConnAck(connack) => {
