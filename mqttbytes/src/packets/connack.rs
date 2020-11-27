@@ -48,7 +48,26 @@ impl ConnAck {
         }
     }
 
-    pub(crate) fn assemble(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Self, Error> {
+    fn len(&self, protocol: Protocol) -> usize {
+        let mut len = 1  // sesssion present
+                        + 1; // code
+
+        if protocol == Protocol::V5 {
+            if let Some(properties) = &self.properties {
+                let properties_len = properties.len();
+                let properties_len_len = len_len(properties_len);
+                len += properties_len_len + properties_len;
+            }
+        }
+
+        len
+    }
+
+    pub fn read(
+        fixed_header: FixedHeader,
+        mut bytes: Bytes,
+        protocol: Protocol,
+    ) -> Result<Self, Error> {
         let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
 
@@ -57,7 +76,11 @@ impl ConnAck {
 
         let session_present = (flags & 0x01) == 1;
         let code = connect_return(return_code)?;
-        let properties = ConnAckProperties::extract(&mut bytes)?;
+        let properties = match protocol {
+            Protocol::V5 => ConnAckProperties::extract(&mut bytes)?,
+            Protocol::V4 => None,
+        };
+
         let connack = ConnAck {
             session_present,
             code,
@@ -67,30 +90,20 @@ impl ConnAck {
         Ok(connack)
     }
 
-    fn len(&self) -> usize {
-        let mut len = 1  // sesssion present
-                        + 1; // code
-
-        if let Some(properties) = &self.properties {
-            let properties_len = properties.len();
-            let properties_len_len = len_len(properties_len);
-            len += properties_len_len + properties_len;
-        }
-
-        len
-    }
-
-    pub fn write(&self, buffer: &mut BytesMut) -> Result<usize, Error> {
+    pub fn write(&self, buffer: &mut BytesMut, protocol: Protocol) -> Result<usize, Error> {
         // TODO reserve buffer of fixed header in all the packets for perf
-        let len = self.len();
+        let len = self.len(protocol);
         buffer.reserve(len);
         buffer.put_u8(0x20);
+
         let count = write_remaining_length(buffer, len)?;
         buffer.put_u8(self.session_present as u8);
         buffer.put_u8(self.code as u8);
 
-        if let Some(properties) = &self.properties {
-            properties.write(buffer)?;
+        if protocol == Protocol::V5 {
+            if let Some(properties) = &self.properties {
+                properties.write(buffer)?;
+            }
         }
 
         Ok(1 + count + len)
@@ -475,13 +488,54 @@ fn connect_return(num: u8) -> Result<ConnectReturnCode, Error> {
 
 #[cfg(test)]
 mod test {
-    use crate::*;
     use super::*;
     use alloc::vec;
     use bytes::{Bytes, BytesMut};
     use pretty_assertions::assert_eq;
 
-    fn sample() -> ConnAck {
+    #[test]
+    fn v4_connack_parsing_works() {
+        let mut stream = bytes::BytesMut::new();
+        let packetstream = &[
+            0b0010_0000,
+            0x02, // packet type, flags and remaining len
+            0x01,
+            0x00, // variable header. connack flags, connect return code
+            0xDE,
+            0xAD,
+            0xBE,
+            0xEF, // extra packets in the stream
+        ];
+
+        stream.extend_from_slice(&packetstream[..]);
+        let fixed_header = parse_fixed_header(stream.iter()).unwrap();
+        let connack_bytes = stream.split_to(fixed_header.frame_length()).freeze();
+        let connack = ConnAck::read(fixed_header, connack_bytes, Protocol::V4).unwrap();
+
+        assert_eq!(
+            connack,
+            ConnAck {
+                session_present: true,
+                code: ConnectReturnCode::Success,
+                properties: None
+            }
+        );
+    }
+
+    #[test]
+    fn v4_connack_encoding_works() {
+        let connack = ConnAck {
+            session_present: true,
+            code: ConnectReturnCode::Success,
+            properties: None,
+        };
+
+        let mut buf = BytesMut::new();
+        connack.write(&mut buf, Protocol::V4).unwrap();
+        assert_eq!(buf, vec![0b0010_0000, 0x02, 0x01, 0x00]);
+    }
+
+    fn v5_sample() -> ConnAck {
         let properties = ConnAckProperties {
             session_expiry_interval: Some(1234),
             receive_max: Some(432),
@@ -509,7 +563,7 @@ mod test {
         }
     }
 
-    fn sample_bytes() -> Vec<u8> {
+    fn v5_sample_bytes() -> Vec<u8> {
         vec![
             0x20, // Packet type
             0x57, // Remaining length
@@ -537,23 +591,23 @@ mod test {
     }
 
     #[test]
-    fn connack_parsing_works_correctly() {
+    fn v5_connack_parsing_works() {
         let mut stream = bytes::BytesMut::new();
-        let packetstream = &sample_bytes();
+        let packetstream = &v5_sample_bytes();
         stream.extend_from_slice(&packetstream[..]);
 
         let fixed_header = parse_fixed_header(stream.iter()).unwrap();
         let connack_bytes = stream.split_to(fixed_header.frame_length()).freeze();
-        let connack = ConnAck::assemble(fixed_header, connack_bytes).unwrap();
+        let connack = ConnAck::read(fixed_header, connack_bytes, Protocol::V5).unwrap();
 
-        assert_eq!(connack, sample());
+        assert_eq!(connack, v5_sample());
     }
 
     #[test]
-    fn connack_encoding_works_correctly() {
-        let connack = sample();
+    fn v5_connack_encoding_works() {
+        let connack = v5_sample();
         let mut buf = BytesMut::new();
-        connack.write(&mut buf).unwrap();
-        assert_eq!(&buf[..], sample_bytes());
+        connack.write(&mut buf, Protocol::V5).unwrap();
+        assert_eq!(&buf[..], v5_sample_bytes());
     }
 }

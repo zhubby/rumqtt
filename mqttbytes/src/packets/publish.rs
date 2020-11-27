@@ -4,7 +4,6 @@ use alloc::vec::Vec;
 use bytes::{Buf, Bytes};
 use core::fmt;
 
-// TODO: Fix order in struct as per spec
 /// Publish packet
 #[derive(Clone, PartialEq)]
 pub struct Publish {
@@ -13,8 +12,8 @@ pub struct Publish {
     pub retain: bool,
     pub topic: String,
     pub pkid: u16,
-    pub properties: Option<PublishProperties>,
     pub payload: Bytes,
+    pub properties: Option<PublishProperties>,
 }
 
 impl Publish {
@@ -42,23 +41,31 @@ impl Publish {
         }
     }
 
-    pub fn set_pkid(&mut self, pkid: u16) -> &mut Self {
-        self.pkid = pkid;
-        self
+    fn len(&self, protocol: Protocol) -> usize {
+        let mut len = 2 + self.topic.len();
+        if self.qos != QoS::AtMostOnce && self.pkid != 0 {
+            len += 2;
+        }
+
+        if protocol == Protocol::V5 {
+            match &self.properties {
+                Some(properties) => {
+                    let properties_len = properties.len();
+                    let properties_len_len = len_len(properties_len);
+                    len += properties_len_len + properties_len;
+                }
+                None => {
+                    // just 1 byte representing 0 len
+                    len += 1;
+                }
+            }
+        }
+
+        len += self.payload.len();
+        len
     }
 
-    pub fn set_retain(&mut self, retain: bool) -> &mut Self {
-        self.retain = retain;
-        self
-    }
-
-    pub fn set_dup(&mut self, dup: bool) -> &mut Self {
-        self.dup = dup;
-        self
-    }
-
-    pub(crate) fn assemble(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Self, Error> {
-        // TODO: Remove publish clone from mqtt4
+    pub fn read(fixed_header: FixedHeader, mut bytes: Bytes, protocol: Protocol) -> Result<Self, Error> {
         let qos = qos((fixed_header.byte1 & 0b0110) >> 1)?;
         let dup = (fixed_header.byte1 & 0b1000) != 0;
         let retain = (fixed_header.byte1 & 0b0001) != 0;
@@ -73,11 +80,14 @@ impl Publish {
             QoS::AtLeastOnce | QoS::ExactlyOnce => read_u16(&mut bytes)?,
         };
 
-        let properties = PublishProperties::extract(&mut bytes)?;
-
         if qos != QoS::AtMostOnce && pkid == 0 {
             return Err(Error::PacketIdZero);
         }
+
+        let properties = match protocol {
+            Protocol::V5 => PublishProperties::extract(&mut bytes)?,
+            Protocol::V4 => None
+        };
 
         let publish = Publish {
             dup,
@@ -92,27 +102,8 @@ impl Publish {
         Ok(publish)
     }
 
-    pub fn len(&self) -> usize {
-        let mut len = 2 + self.topic.len();
-        if self.qos != QoS::AtMostOnce && self.pkid != 0 {
-            len += 2;
-        }
-
-        if let Some(properties) = &self.properties {
-            let properties_len = properties.len();
-            let properties_len_len = len_len(properties_len);
-            len += properties_len_len + properties_len;
-        } else {
-            // just 1 byte representing 0 len
-            len += 1;
-        }
-
-        len += self.payload.len();
-        len
-    }
-
-    pub fn write(&self, buffer: &mut BytesMut) -> Result<usize, Error> {
-        let len = self.len();
+    pub fn write(&self, buffer: &mut BytesMut, protocol: Protocol) -> Result<usize, Error> {
+        let len = self.len(protocol);
         buffer.reserve(len);
 
         let dup = self.dup as u8;
@@ -131,12 +122,15 @@ impl Publish {
             buffer.put_u16(pkid);
         }
 
-        match &self.properties {
-            Some(properties) => properties.write(buffer)?,
-            None => {
-                write_remaining_length(buffer, 0)?;
-            }
-        };
+        if protocol == Protocol::V5 {
+            match &self.properties {
+                Some(properties) => properties.write(buffer)?,
+                None => {
+                    write_remaining_length(buffer, 0)?;
+                }
+            };
+        }
+
 
         buffer.extend_from_slice(&self.payload);
 
@@ -344,7 +338,154 @@ mod test {
     use bytes::{Bytes, BytesMut};
     use pretty_assertions::assert_eq;
 
-    fn sample() -> Publish {
+    #[test]
+    fn v4_qos1_publish_parsing_works() {
+        let stream = &[
+            0b0011_0010,
+            11, // packet type, flags and remaining len
+            0x00,
+            0x03,
+            b'a',
+            b'/',
+            b'b', // variable header. topic name = 'a/b'
+            0x00,
+            0x0a, // variable header. pkid = 10
+            0xF1,
+            0xF2,
+            0xF3,
+            0xF4, // publish payload
+            0xDE,
+            0xAD,
+            0xBE,
+            0xEF, // extra packets in the stream
+        ];
+
+        let mut stream = BytesMut::from(&stream[..]);
+        let fixed_header = parse_fixed_header(stream.iter()).unwrap();
+        let publish_bytes = stream.split_to(fixed_header.frame_length()).freeze();
+        let packet = Publish::read(fixed_header, publish_bytes, Protocol::V4).unwrap();
+
+        let payload = &[0xF1, 0xF2, 0xF3, 0xF4];
+        assert_eq!(
+            packet,
+            Publish {
+                dup: false,
+                qos: QoS::AtLeastOnce,
+                retain: false,
+                topic: "a/b".to_owned(),
+                pkid: 10,
+                payload: Bytes::from(&payload[..]),
+                properties: None
+            }
+        );
+    }
+
+    #[test]
+    fn v4_qos0_publish_parsing_works() {
+        let stream = &[
+            0b0011_0000,
+            7, // packet type, flags and remaining len
+            0x00,
+            0x03,
+            b'a',
+            b'/',
+            b'b', // variable header. topic name = 'a/b'
+            0x01,
+            0x02, // payload
+            0xDE,
+            0xAD,
+            0xBE,
+            0xEF, // extra packets in the stream
+        ];
+
+        let mut stream = BytesMut::from(&stream[..]);
+        let fixed_header = parse_fixed_header(stream.iter()).unwrap();
+        let publish_bytes = stream.split_to(fixed_header.frame_length()).freeze();
+        let packet = Publish::read(fixed_header, publish_bytes, Protocol::V4).unwrap();
+
+        assert_eq!(
+            packet,
+            Publish {
+                dup: false,
+                qos: QoS::AtMostOnce,
+                retain: false,
+                topic: "a/b".to_owned(),
+                pkid: 0,
+                payload: Bytes::from(&[0x01, 0x02][..]),
+                properties: None
+            }
+        );
+    }
+
+    #[test]
+        fn v4_qos1_publish_encoding_works() {
+        let publish = Publish {
+            dup: false,
+            qos: QoS::AtLeastOnce,
+            retain: false,
+            topic: "a/b".to_owned(),
+            pkid: 10,
+            payload: Bytes::from(vec![0xF1, 0xF2, 0xF3, 0xF4]),
+            properties: None
+        };
+
+        let mut buf = BytesMut::new();
+        publish.write(&mut buf, Protocol::V4).unwrap();
+
+        assert_eq!(
+            buf,
+            vec![
+                0b0011_0010,
+                11,
+                0x00,
+                0x03,
+                b'a',
+                b'/',
+                b'b',
+                0x00,
+                0x0a,
+                0xF1,
+                0xF2,
+                0xF3,
+                0xF4
+            ]
+        );
+    }
+
+    #[test]
+    fn v4_qos0_publish_encoding_works() {
+        let publish = Publish {
+            dup: false,
+            qos: QoS::AtMostOnce,
+            retain: false,
+            topic: "a/b".to_owned(),
+            pkid: 0,
+            payload: Bytes::from(vec![0xE1, 0xE2, 0xE3, 0xE4]),
+            properties: None
+        };
+
+        let mut buf = BytesMut::new();
+        publish.write(&mut buf, Protocol::V4).unwrap();
+
+        assert_eq!(
+            buf,
+            vec![
+                0b0011_0000,
+                9,
+                0x00,
+                0x03,
+                b'a',
+                b'/',
+                b'b',
+                0xE1,
+                0xE2,
+                0xE3,
+                0xE4
+            ]
+        );
+    }
+
+    fn sample_v5() -> Publish {
         let publish_properties = PublishProperties {
             payload_format_indicator: Some(1),
             message_expiry_interval: Some(4321),
@@ -367,7 +508,7 @@ mod test {
         }
     }
 
-    fn sample_bytes() -> Vec<u8> {
+    fn sample_v5_bytes() -> Vec<u8> {
         vec![
             0x34, // payload type
             0x3e, // remaining len
@@ -389,26 +530,26 @@ mod test {
     }
 
     #[test]
-    fn publish_parsing_works_correctly() {
+    fn v5_publish_parsing_works() {
         let mut stream = bytes::BytesMut::new();
-        let packetstream = &sample_bytes();
+        let packetstream = &sample_v5_bytes();
         stream.extend_from_slice(&packetstream[..]);
 
 
         let fixed_header = parse_fixed_header(stream.iter()).unwrap();
         let publish_bytes = stream.split_to(fixed_header.frame_length()).freeze();
-        let publish = Publish::assemble(fixed_header, publish_bytes).unwrap();
-        assert_eq!(publish, sample());
+        let publish = Publish::read(fixed_header, publish_bytes, Protocol::V5).unwrap();
+        assert_eq!(publish, sample_v5());
     }
 
     #[test]
-    fn publish_encoding_works_correctly() {
-        let publish = sample();
+    fn v5_publish_encoding_works() {
+        let publish = sample_v5();
         let mut buf = BytesMut::new();
-        publish.write(&mut buf).unwrap();
-        assert_eq!(&buf[..], sample_bytes());
+        publish.write(&mut buf, Protocol::V5).unwrap();
+        assert_eq!(&buf[..], sample_v5_bytes());
     }
 
     #[test]
-    fn missing_properties_are_encoded_correctly() {}
+    fn missing_properties_are_encoded() {}
 }

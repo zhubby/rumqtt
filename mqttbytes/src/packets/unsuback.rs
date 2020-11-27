@@ -1,18 +1,14 @@
 use crate::*;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
-/// Acknowledgement to QoS2 publish
+/// Acknowledgement to unsubscribe
 #[derive(Debug, Clone, PartialEq)]
-pub struct PubRec {
+pub struct UnsubAck {
     pub pkid: u16,
 }
 
-impl PubRec {
-    pub fn new(pkid: u16) -> PubRec {
-        PubRec { pkid }
-    }
-
-    pub(crate) fn assemble(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Self, Error> {
+impl UnsubAck {
+    pub fn read(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Self, Error> {
         if fixed_header.remaining_len != 2 {
             return Err(Error::PayloadSizeIncorrect);
         }
@@ -20,14 +16,13 @@ impl PubRec {
         let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
         let pkid = read_u16(&mut bytes)?;
-        let pubrec = PubRec { pkid };
+        let unsuback = UnsubAck { pkid };
 
-        Ok(pubrec)
+        Ok(unsuback)
     }
 
     pub fn write(&self, payload: &mut BytesMut) -> Result<usize, Error> {
-        let o: &[u8] = &[0x50, 0x02];
-        payload.put_slice(o);
+        payload.put_slice(&[0xB0, 0x02]);
         payload.put_u16(self.pkid);
         Ok(4)
     }

@@ -33,7 +33,28 @@ impl PubAck {
         }
     }
 
-    pub(crate) fn assemble(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Self, Error> {
+    fn len(&self, protocol: Protocol) -> usize {
+        let mut len = 2 + 1; // pkid + reason
+
+        if self.reason == PubAckReason::Success && self.properties.is_none() {
+            return 2;
+        }
+
+        if protocol == Protocol::V5 {
+            if let Some(properties) = &self.properties {
+                let properties_len = properties.len();
+                let properties_len_len = len_len(properties_len);
+                len += properties_len_len + properties_len;
+            }
+        }
+
+        // Unlike other packets, property length can be ignored if there are
+        // no properties in acks
+
+        len
+    }
+
+    pub fn read(fixed_header: FixedHeader, mut bytes: Bytes, protocol: Protocol) -> Result<Self, Error> {
         let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
         let pkid = read_u16(&mut bytes)?;
@@ -57,7 +78,11 @@ impl PubAck {
             });
         }
 
-        let properties = PubAckProperties::extract(&mut bytes)?;
+        let properties = match protocol {
+            Protocol::V5 => PubAckProperties::extract(&mut bytes)?,
+            Protocol::V4 => None
+        };
+
         let puback = PubAck {
             pkid,
             reason: reason(ack_reason)?,
@@ -67,27 +92,8 @@ impl PubAck {
         Ok(puback)
     }
 
-    fn len(&self) -> usize {
-        let mut len = 2 + 1; // pkid + reason
-
-        if self.reason == PubAckReason::Success && self.properties.is_none() {
-            return 2;
-        }
-
-        if let Some(properties) = &self.properties {
-            let properties_len = properties.len();
-            let properties_len_len = len_len(properties_len);
-            len += properties_len_len + properties_len;
-        }
-
-        // Unlike other packets, property length can be ignored if there are
-        // no properties in acks
-
-        len
-    }
-
-    pub fn write(&self, buffer: &mut BytesMut) -> Result<usize, Error> {
-        let len = self.len();
+    pub fn write(&self, buffer: &mut BytesMut, protocol: Protocol) -> Result<usize, Error> {
+        let len = self.len(protocol);
         buffer.reserve(len);
         buffer.put_u8(0x40);
         let count = write_remaining_length(buffer, len)?;
@@ -98,8 +104,11 @@ impl PubAck {
         }
 
         buffer.put_u8(self.reason as u8);
-        if let Some(properties) = &self.properties {
-            properties.write(buffer)?;
+
+        if protocol == Protocol::V5 {
+            if let Some(properties) = &self.properties {
+                properties.write(buffer)?;
+            }
         }
 
         Ok(1 + count + len)
@@ -208,7 +217,28 @@ mod test {
     use bytes::BytesMut;
     use pretty_assertions::assert_eq;
 
-    fn sample() -> PubAck {
+    #[test]
+    fn v4_puback_encoding_works() {
+        let stream = &[
+            0b0100_0000,
+            0x02, // packet type, flags and remaining len
+            0x00,
+            0x0A, // fixed header. packet identifier = 10
+            0xDE,
+            0xAD,
+            0xBE,
+            0xEF, // extra packets in the stream
+        ];
+        let mut stream = BytesMut::from(&stream[..]);
+        let fixed_header = parse_fixed_header(stream.iter()).unwrap();
+        let ack_bytes = stream.split_to(fixed_header.frame_length()).freeze();
+        let packet = PubAck::read(fixed_header, ack_bytes, Protocol::V4).unwrap();
+
+
+        assert_eq!(packet, PubAck { pkid: 10, reason: PubAckReason::Success, properties: None });
+    }
+
+    fn v5_sample() -> PubAck {
         let properties = PubAckProperties {
             reason_string: Some("test".to_owned()),
             user_properties: vec![("test".to_owned(), "test".to_owned())],
@@ -221,7 +251,7 @@ mod test {
         }
     }
 
-    fn sample_bytes() -> Vec<u8> {
+    fn v5_sample_bytes() -> Vec<u8> {
         vec![
             0x40, // payload type
             0x18, // remaining length
@@ -235,26 +265,26 @@ mod test {
     }
 
     #[test]
-    fn puback_parsing_works_correctly() {
+    fn v5_puback_parsing_works() {
         let mut stream = bytes::BytesMut::new();
-        let packetstream = &sample_bytes();
+        let packetstream = &v5_sample_bytes();
         stream.extend_from_slice(&packetstream[..]);
 
         let fixed_header = parse_fixed_header(stream.iter()).unwrap();
         let puback_bytes = stream.split_to(fixed_header.frame_length()).freeze();
-        let puback = PubAck::assemble(fixed_header, puback_bytes).unwrap();
-        assert_eq!(puback, sample());
+        let puback = PubAck::read(fixed_header, puback_bytes, Protocol::V5).unwrap();
+        assert_eq!(puback, v5_sample());
     }
 
     #[test]
-    fn puback_encoding_works_correctly() {
-        let puback = sample();
+    fn v5_puback_encoding_works() {
+        let puback = v5_sample();
         let mut buf = BytesMut::new();
-        puback.write(&mut buf).unwrap();
-        assert_eq!(&buf[..], sample_bytes());
+        puback.write(&mut buf, Protocol::V5).unwrap();
+        assert_eq!(&buf[..], v5_sample_bytes());
     }
 
-    fn sample2() -> PubAck {
+    fn v5_sample2() -> PubAck {
         PubAck {
             pkid: 42,
             reason: PubAckReason::NoMatchingSubscribers,
@@ -262,32 +292,32 @@ mod test {
         }
     }
 
-    fn sample2_bytes() -> Vec<u8> {
+    fn v5_sample2_bytes() -> Vec<u8> {
         vec![0x40, 0x03, 0x00, 0x2a, 0x10]
     }
 
     #[test]
-    fn puback2_parsing_works_correctly() {
+    fn v5_puback2_parsing_works() {
         let mut stream = bytes::BytesMut::new();
-        let packetstream = &sample2_bytes();
+        let packetstream = &v5_sample2_bytes();
         stream.extend_from_slice(&packetstream[..]);
 
         let fixed_header = parse_fixed_header(stream.iter()).unwrap();
         let puback_bytes = stream.split_to(fixed_header.frame_length()).freeze();
-        let puback = PubAck::assemble(fixed_header, puback_bytes).unwrap();
-        assert_eq!(puback, sample2());
+        let puback = PubAck::read(fixed_header, puback_bytes, Protocol::V5).unwrap();
+        assert_eq!(puback, v5_sample2());
     }
 
     #[test]
-    fn puback2_encoding_works_correctly() {
-        let puback = sample2();
+    fn v5_puback2_encoding_works() {
+        let puback = v5_sample2();
         let mut buf = BytesMut::new();
 
-        puback.write(&mut buf).unwrap();
-        assert_eq!(&buf[..], sample2_bytes());
+        puback.write(&mut buf, Protocol::V5).unwrap();
+        assert_eq!(&buf[..], v5_sample2_bytes());
     }
 
-    fn sample3() -> PubAck {
+    fn v5_sample3() -> PubAck {
         PubAck {
             pkid: 42,
             reason: PubAckReason::Success,
@@ -295,29 +325,29 @@ mod test {
         }
     }
 
-    fn sample3_bytes() -> Vec<u8> {
+    fn v5_sample3_bytes() -> Vec<u8> {
         vec![0x40, 0x02, 0x00, 0x2a]
     }
 
     #[test]
-    fn puback3_parsing_works_correctly() {
+    fn v5_puback3_parsing_works() {
         let mut stream = bytes::BytesMut::new();
-        let packetstream = &sample3_bytes();
+        let packetstream = &v5_sample3_bytes();
         stream.extend_from_slice(&packetstream[..]);
 
 
         let fixed_header = parse_fixed_header(stream.iter()).unwrap();
         let puback_bytes = stream.split_to(fixed_header.frame_length()).freeze();
-        let puback = PubAck::assemble(fixed_header, puback_bytes).unwrap();
-        assert_eq!(puback, sample3());
+        let puback = PubAck::read(fixed_header, puback_bytes, Protocol::V5).unwrap();
+        assert_eq!(puback, v5_sample3());
     }
 
     #[test]
-    fn puback3_encoding_works_correctly() {
-        let puback = sample3();
+    fn v5_puback3_encoding_works() {
+        let puback = v5_sample3();
         let mut buf = BytesMut::new();
 
-        puback.write(&mut buf).unwrap();
-        assert_eq!(&buf[..], sample3_bytes());
+        puback.write(&mut buf, Protocol::V5).unwrap();
+        assert_eq!(&buf[..], v5_sample3_bytes());
     }
 }

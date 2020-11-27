@@ -1,14 +1,19 @@
 extern crate alloc;
 
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::slice::Iter;
-use bytes::{Bytes, BytesMut, Buf, BufMut};
 
-pub mod v4;
-pub mod v5;
+mod packets;
+mod read;
+
+pub use packets::*;
+pub use read::*;
 
 /// Error during serialization and deserialization
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
+    NotConnect(PacketType),
+    UnexpectedConnect,
     InvalidConnectReturnCode(u8),
     InvalidReason(u8),
     InvalidProtocol,
@@ -58,7 +63,8 @@ pub enum PacketType {
 /// Protocol type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Protocol {
-    MQTT(u8),
+    V4,
+    V5,
 }
 
 /// Quality of service
@@ -103,7 +109,6 @@ impl FixedHeader {
             remaining_len,
         }
     }
-
 
     pub fn packet_type(&self) -> Result<PacketType, Error> {
         let num = self.byte1 >> 4;
@@ -327,4 +332,3 @@ fn read_u32(stream: &mut Bytes) -> Result<u32, Error> {
 
     Ok(stream.get_u32())
 }
-

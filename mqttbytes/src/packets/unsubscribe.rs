@@ -11,7 +11,13 @@ pub struct Unsubscribe {
 }
 
 impl Unsubscribe {
-    pub(crate) fn assemble(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Self, Error> {
+    pub fn new<S: Into<String>>(topic: S) -> Unsubscribe {
+        let mut topics = Vec::new();
+        topics.push(topic.into());
+        Unsubscribe { pkid: 0, topics }
+    }
+
+    pub fn read(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Self, Error> {
         let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
 
@@ -29,12 +35,6 @@ impl Unsubscribe {
         Ok(unsubscribe)
     }
 
-    pub fn new<S: Into<String>>(topic: S) -> Unsubscribe {
-        let mut topics = Vec::new();
-        topics.push(topic.into());
-        Unsubscribe { pkid: 0, topics }
-    }
-
     pub fn write(&self, payload: &mut BytesMut) -> Result<usize, Error> {
         let remaining_len = 2 + self
             .topics
@@ -45,6 +45,7 @@ impl Unsubscribe {
         payload.put_u8(0xA2);
         let remaining_len_bytes = write_remaining_length(payload, remaining_len)?;
         payload.put_u16(self.pkid);
+
         for topic in self.topics.iter() {
             write_mqtt_string(payload, topic.as_str());
         }
