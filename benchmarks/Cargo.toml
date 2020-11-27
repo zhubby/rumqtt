@@ -12,6 +12,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 mqttbytes = { path = "../mqttbytes" }
 mqtt4bytes = { path = "../mqtt4bytes" }
+mqtt5bytes = { path = "../mqtt5bytes" }
 rumqttc = { path = "../rumqttc" }
 rumqttlog = { path = "../rumqttlog" }
 tokio = { version = "=0.3", features = ["full"] }

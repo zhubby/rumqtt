@@ -1,6 +1,5 @@
 use bytes::{Buf, BytesMut};
-use mqttbytes::v4::{mqtt_read, Publish};
-use mqttbytes::QoS;
+use mqttbytes::{read, Protocol, Publish, QoS};
 use std::time::Instant;
 
 mod common;
@@ -20,7 +19,7 @@ fn main() {
     let start = Instant::now();
     let mut output = BytesMut::new();
     for publish in data.into_iter() {
-        publish.write(&mut output).unwrap();
+        publish.write(&mut output, Protocol::V4).unwrap();
     }
 
     let elapsed_micros = start.elapsed().as_micros();
@@ -34,7 +33,7 @@ fn main() {
     let start = Instant::now();
     let mut packets = Vec::with_capacity(count);
     while output.has_remaining() {
-        let packet = mqtt_read(&mut output, 10 * 1024).unwrap();
+        let packet = read(&mut output, Protocol::V4, 10 * 1024).unwrap();
         packets.push(packet);
     }
 
