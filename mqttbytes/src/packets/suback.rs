@@ -8,6 +8,7 @@ use std::convert::{TryFrom, TryInto};
 pub struct SubAck {
     pub pkid: u16,
     pub return_codes: Vec<SubscribeReasonCode>,
+    #[cfg(v5)]
     pub properties: Option<SubAckProperties>,
 }
 
@@ -16,44 +17,35 @@ impl SubAck {
         SubAck {
             pkid,
             return_codes,
+            #[cfg(v5)]
             properties: None,
         }
     }
 
-    pub fn len(&self, protocol: Protocol) -> usize {
-        let mut len = 2 + self.return_codes.len();
+    pub fn len(&self) -> usize {
+        let len = 2 + self.return_codes.len();
 
-        if protocol == Protocol::V5 {
-            match &self.properties {
-                Some(properties) => {
-                    let properties_len = properties.len();
-                    let properties_len_len = len_len(properties_len);
-                    len += properties_len_len + properties_len;
-                }
-                None => {
-                    // just 1 byte representing 0 len
-                    len += 1;
-                }
+        #[cfg(v5)]
+        match &self.properties {
+            Some(properties) => {
+                let properties_len = properties.len();
+                let properties_len_len = len_len(properties_len);
+                len += properties_len_len + properties_len;
+            }
+            None => {
+                // just 1 byte representing 0 len
+                len += 1;
             }
         }
 
         len
     }
 
-    pub fn read(
-        fixed_header: FixedHeader,
-        mut bytes: Bytes,
-        protocol: Protocol,
-    ) -> Result<Self, Error> {
+    pub fn read(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Self, Error> {
         let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
 
         let pkid = read_u16(&mut bytes)?;
-
-        let properties = match protocol {
-            Protocol::V5 => SubAckProperties::extract(&mut bytes)?,
-            Protocol::V4 => None,
-        };
 
         if !bytes.has_remaining() {
             return Err(Error::MalformedPacket);
@@ -68,27 +60,27 @@ impl SubAck {
         let suback = SubAck {
             pkid,
             return_codes,
-            properties,
+            #[cfg(v5)]
+            properties: SubAckProperties::extract(&mut bytes)?,
         };
 
         Ok(suback)
     }
 
-    pub fn write(&self, buffer: &mut BytesMut, protocol: Protocol) -> Result<usize, Error> {
+    pub fn write(&self, buffer: &mut BytesMut) -> Result<usize, Error> {
         buffer.put_u8(0x90);
-        let remaining_len = self.len(protocol);
+        let remaining_len = self.len();
         let remaining_len_bytes = write_remaining_length(buffer, remaining_len)?;
 
         buffer.put_u16(self.pkid);
 
-        if protocol == Protocol::V5 {
-            match &self.properties {
-                Some(properties) => properties.write(buffer)?,
-                None => {
-                    write_remaining_length(buffer, 0)?;
-                }
-            };
-        }
+        #[cfg(v5)]
+        match &self.properties {
+            Some(properties) => properties.write(buffer)?,
+            None => {
+                write_remaining_length(buffer, 0)?;
+            }
+        };
 
         let p: Vec<u8> = self.return_codes.iter().map(|code| *code as u8).collect();
         buffer.extend_from_slice(&p);
@@ -96,12 +88,14 @@ impl SubAck {
     }
 }
 
+#[cfg(v5)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct SubAckProperties {
     pub reason_string: Option<String>,
     pub user_properties: Vec<(String, String)>,
 }
 
+#[cfg(v5)]
 impl SubAckProperties {
     pub fn len(&self) -> usize {
         let mut len = 0;
@@ -234,17 +228,25 @@ mod test {
         let mut stream = BytesMut::from(&stream[..]);
         let fixed_header = parse_fixed_header(stream.iter()).unwrap();
         let ack_bytes = stream.split_to(fixed_header.frame_length()).freeze();
-        let packet = SubAck::read(fixed_header, ack_bytes, Protocol::V4).unwrap();
+        let packet = SubAck::read(fixed_header, ack_bytes).unwrap();
 
         assert_eq!(
             packet,
             SubAck {
                 pkid: 15,
                 return_codes: vec![SubscribeReasonCode::QoS1, SubscribeReasonCode::Unspecified,],
-                properties: None
             }
         );
     }
+}
+
+#[cfg(v5)]
+#[cfg(test)]
+mod test {
+    use super::*;
+    use alloc::vec;
+    use bytes::BytesMut;
+    use pretty_assertions::assert_eq;
 
     fn v5_sample() -> SubAck {
         let properties = SubAckProperties {

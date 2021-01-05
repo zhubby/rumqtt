@@ -14,6 +14,7 @@ pub enum PubRelReason {
 pub struct PubRel {
     pub pkid: u16,
     pub reason: PubRelReason,
+    #[cfg(v5)]
     pub properties: Option<PubRelProperties>,
 }
 
@@ -22,32 +23,30 @@ impl PubRel {
         PubRel {
             pkid,
             reason: PubRelReason::Success,
+            #[cfg(v5)]
             properties: None,
         }
     }
 
-    fn len(&self, protocol: Protocol) -> usize {
-        let mut len = 2 + 1; // pkid + reason
-        if self.reason == PubRelReason::Success && self.properties.is_none() {
+    fn len(&self) -> usize {
+        let len = 2 + 1; // pkid + reason
+
+        // TODO: Verify
+        if self.reason == PubRelReason::Success {
             return 2;
         }
 
-        if protocol == Protocol::V5 {
-            if let Some(properties) = &self.properties {
-                let properties_len = properties.len();
-                let properties_len_len = len_len(properties_len);
-                len += properties_len_len + properties_len;
-            }
+        #[cfg(v5)]
+        if let Some(properties) = &self.properties {
+            let properties_len = properties.len();
+            let properties_len_len = len_len(properties_len);
+            len += properties_len_len + properties_len;
         }
 
         len
     }
 
-    pub fn read(
-        fixed_header: FixedHeader,
-        mut bytes: Bytes,
-        protocol: Protocol,
-    ) -> Result<Self, Error> {
+    pub fn read(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Self, Error> {
         let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
         let pkid = read_u16(&mut bytes)?;
@@ -55,6 +54,7 @@ impl PubRel {
             return Ok(PubRel {
                 pkid,
                 reason: PubRelReason::Success,
+                #[cfg(v5)]
                 properties: None,
             });
         }
@@ -64,51 +64,50 @@ impl PubRel {
             return Ok(PubRel {
                 pkid,
                 reason: reason(ack_reason)?,
+                #[cfg(v5)]
                 properties: None,
             });
         }
 
-        let properties = match protocol {
-            Protocol::V5 => PubRelProperties::extract(&mut bytes)?,
-            Protocol::V4 => None,
-        };
-
         let puback = PubRel {
             pkid,
             reason: reason(ack_reason)?,
-            properties,
+            #[cfg(v5)]
+            properties: PubRelProperties::extract(&mut bytes)?,
         };
 
         Ok(puback)
     }
 
-    pub fn write(&self, buffer: &mut BytesMut, protocol: Protocol) -> Result<usize, Error> {
-        let len = self.len(protocol);
+    pub fn write(&self, buffer: &mut BytesMut) -> Result<usize, Error> {
+        let len = self.len();
         buffer.put_u8(0x62);
         let count = write_remaining_length(buffer, len)?;
         buffer.put_u16(self.pkid);
-        if self.reason == PubRelReason::Success && self.properties.is_none() {
+        // TODO: Verify
+        if self.reason == PubRelReason::Success {
             return Ok(4);
         }
 
         buffer.put_u8(self.reason as u8);
 
-        if protocol == Protocol::V5 {
-            if let Some(properties) = &self.properties {
-                properties.write(buffer)?;
-            }
+        #[cfg(v5)]
+        if let Some(properties) = &self.properties {
+            properties.write(buffer)?;
         }
 
         Ok(1 + count + len)
     }
 }
 
+#[cfg(v5)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct PubRelProperties {
     pub reason_string: Option<String>,
     pub user_properties: Vec<(String, String)>,
 }
 
+#[cfg(v5)]
 impl PubRelProperties {
     pub fn len(&self) -> usize {
         let mut len = 0;
@@ -191,6 +190,7 @@ fn reason(num: u8) -> Result<PubRelReason, Error> {
     Ok(code)
 }
 
+#[cfg(v5)]
 #[cfg(test)]
 mod test {
     use super::*;

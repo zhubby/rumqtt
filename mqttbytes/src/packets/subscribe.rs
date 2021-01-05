@@ -9,6 +9,7 @@ use core::fmt;
 pub struct Subscribe {
     pub pkid: u16,
     pub filters: Vec<SubscribeFilter>,
+    #[cfg(v5)]
     pub properties: Option<SubscribeProperties>,
 }
 
@@ -27,6 +28,7 @@ impl Subscribe {
         Subscribe {
             pkid: 0,
             filters,
+            #[cfg(v5)]
             properties: None,
         }
     }
@@ -38,6 +40,7 @@ impl Subscribe {
         Subscribe {
             pkid: 0,
             filters: topics.into_iter().collect(),
+            #[cfg(v5)]
             properties: None,
         }
     }
@@ -46,6 +49,7 @@ impl Subscribe {
         Subscribe {
             pkid: 0,
             filters: Vec::new(),
+            #[cfg(v5)]
             properties: None,
         }
     }
@@ -63,36 +67,27 @@ impl Subscribe {
         self
     }
 
-    pub fn len(&self, protocol: Protocol) -> usize {
-        let mut len = 2 + self.filters.iter().fold(0, |s, t| s + t.len());
+    pub fn len(&self) -> usize {
+        let len = 2 + self.filters.iter().fold(0, |s, t| s + t.len());
 
-        if protocol == Protocol::V5 {
-            if let Some(properties) = &self.properties {
-                let properties_len = properties.len();
-                let properties_len_len = len_len(properties_len);
-                len += properties_len_len + properties_len;
-            } else {
-                // just 1 byte representing 0 len
-                len += 1;
-            }
+        #[cfg(v5)]
+        if let Some(properties) = &self.properties {
+            let properties_len = properties.len();
+            let properties_len_len = len_len(properties_len);
+            len += properties_len_len + properties_len;
+        } else {
+            // just 1 byte representing 0 len
+            len += 1;
         }
 
         len
     }
 
-    pub fn read(
-        fixed_header: FixedHeader,
-        mut bytes: Bytes,
-        protocol: Protocol,
-    ) -> Result<Self, Error> {
+    pub fn read(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Self, Error> {
         let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
 
         let pkid = read_u16(&mut bytes)?;
-        let properties = match protocol {
-            Protocol::V5 => SubscribeProperties::extract(&mut bytes)?,
-            Protocol::V4 => None,
-        };
 
         // variable header size = 2 (packet identifier)
         let mut filters = Vec::new();
@@ -128,31 +123,31 @@ impl Subscribe {
         let subscribe = Subscribe {
             pkid,
             filters,
-            properties,
+            #[cfg(v5)]
+            properties: SubscribeProperties::extract(&mut bytes)?,
         };
 
         Ok(subscribe)
     }
 
-    pub fn write(&self, buffer: &mut BytesMut, protocol: Protocol) -> Result<usize, Error> {
+    pub fn write(&self, buffer: &mut BytesMut) -> Result<usize, Error> {
         // write packet type
         buffer.put_u8(0x82);
 
         // write remaining length
-        let remaining_len = self.len(protocol);
+        let remaining_len = self.len();
         let remaining_len_bytes = write_remaining_length(buffer, remaining_len)?;
 
         // write packet id
         buffer.put_u16(self.pkid);
 
-        if protocol == Protocol::V5 {
-            match &self.properties {
-                Some(properties) => properties.write(buffer)?,
-                None => {
-                    write_remaining_length(buffer, 0)?;
-                }
-            };
-        }
+        #[cfg(v5)]
+        match &self.properties {
+            Some(properties) => properties.write(buffer)?,
+            None => {
+                write_remaining_length(buffer, 0)?;
+            }
+        };
 
         // write filters
         for filter in self.filters.iter() {
@@ -163,12 +158,14 @@ impl Subscribe {
     }
 }
 
+#[cfg(v5)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct SubscribeProperties {
     pub id: Option<usize>,
     pub user_properties: Vec<(String, String)>,
 }
 
+#[cfg(v5)]
 impl SubscribeProperties {
     pub fn len(&self) -> usize {
         let mut len = 0;
@@ -375,7 +372,7 @@ mod test {
         let mut stream = BytesMut::from(&stream[..]);
         let fixed_header = parse_fixed_header(stream.iter()).unwrap();
         let subscribe_bytes = stream.split_to(fixed_header.frame_length()).freeze();
-        let packet = Subscribe::read(fixed_header, subscribe_bytes, Protocol::V4).unwrap();
+        let packet = Subscribe::read(fixed_header, subscribe_bytes).unwrap();
 
         assert_eq!(
             packet,
@@ -386,7 +383,6 @@ mod test {
                     SubscribeFilter::new("#".to_owned(), QoS::AtLeastOnce),
                     SubscribeFilter::new("a/b/c".to_owned(), QoS::ExactlyOnce)
                 ],
-                properties: None
             }
         );
     }
@@ -400,11 +396,10 @@ mod test {
                 SubscribeFilter::new("#".to_owned(), QoS::AtLeastOnce),
                 SubscribeFilter::new("a/b/c".to_owned(), QoS::ExactlyOnce),
             ],
-            properties: None,
         };
 
         let mut buf = BytesMut::new();
-        subscribe.write(&mut buf, Protocol::V4).unwrap();
+        subscribe.write(&mut buf).unwrap();
         assert_eq!(
             buf,
             vec![
@@ -433,6 +428,15 @@ mod test {
             ]
         );
     }
+}
+
+#[cfg(v5)]
+#[cfg(test)]
+mod test {
+    use super::*;
+    use alloc::vec;
+    use bytes::BytesMut;
+    use pretty_assertions::assert_eq;
 
     fn v5_sample() -> Subscribe {
         let subscribe_properties = SubscribeProperties {

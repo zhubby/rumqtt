@@ -484,7 +484,7 @@ fn connect_return(num: u8) -> Result<ConnectReturnCode, Error> {
 mod test {
     use super::*;
     use alloc::vec;
-    use bytes::{Bytes, BytesMut};
+    use bytes::BytesMut;
     use pretty_assertions::assert_eq;
 
     #[test]

@@ -12,8 +12,9 @@ pub struct Publish {
     pub retain: bool,
     pub topic: String,
     pub pkid: u16,
-    pub payload: Bytes,
+    #[cfg(v5)]
     pub properties: Option<PublishProperties>,
+    pub payload: Bytes,
 }
 
 impl Publish {
@@ -24,6 +25,7 @@ impl Publish {
             retain: false,
             pkid: 0,
             topic: topic.into(),
+            #[cfg(v5)]
             properties: None,
             payload: Bytes::from(payload.into()),
         }
@@ -36,28 +38,28 @@ impl Publish {
             retain: false,
             pkid: 0,
             topic: topic.into(),
+            #[cfg(v5)]
             properties: None,
             payload,
         }
     }
 
-    fn len(&self, protocol: Protocol) -> usize {
+    fn len(&self) -> usize {
         let mut len = 2 + self.topic.len();
         if self.qos != QoS::AtMostOnce && self.pkid != 0 {
             len += 2;
         }
 
-        if protocol == Protocol::V5 {
-            match &self.properties {
-                Some(properties) => {
-                    let properties_len = properties.len();
-                    let properties_len_len = len_len(properties_len);
-                    len += properties_len_len + properties_len;
-                }
-                None => {
-                    // just 1 byte representing 0 len
-                    len += 1;
-                }
+        #[cfg(v5)]
+        match &self.properties {
+            Some(properties) => {
+                let properties_len = properties.len();
+                let properties_len_len = len_len(properties_len);
+                len += properties_len_len + properties_len;
+            }
+            None => {
+                // just 1 byte representing 0 len
+                len += 1;
             }
         }
 
@@ -65,11 +67,7 @@ impl Publish {
         len
     }
 
-    pub fn read(
-        fixed_header: FixedHeader,
-        mut bytes: Bytes,
-        protocol: Protocol,
-    ) -> Result<Self, Error> {
+    pub fn read(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Self, Error> {
         let qos = qos((fixed_header.byte1 & 0b0110) >> 1)?;
         let dup = (fixed_header.byte1 & 0b1000) != 0;
         let retain = (fixed_header.byte1 & 0b0001) != 0;
@@ -88,26 +86,22 @@ impl Publish {
             return Err(Error::PacketIdZero);
         }
 
-        let properties = match protocol {
-            Protocol::V5 => PublishProperties::extract(&mut bytes)?,
-            Protocol::V4 => None,
-        };
-
         let publish = Publish {
             dup,
             retain,
             qos,
             pkid,
             topic,
-            properties,
+            #[cfg(v5)]
+            properties: PublishProperties::extract(&mut bytes)?,
             payload: bytes,
         };
 
         Ok(publish)
     }
 
-    pub fn write(&self, buffer: &mut BytesMut, protocol: Protocol) -> Result<usize, Error> {
-        let len = self.len(protocol);
+    pub fn write(&self, buffer: &mut BytesMut) -> Result<usize, Error> {
+        let len = self.len();
 
         let dup = self.dup as u8;
         let qos = self.qos as u8;
@@ -126,14 +120,13 @@ impl Publish {
             buffer.put_u16(pkid);
         }
 
-        if protocol == Protocol::V5 {
-            match &self.properties {
-                Some(properties) => properties.write(buffer)?,
-                None => {
-                    write_remaining_length(buffer, 0)?;
-                }
-            };
-        }
+        #[cfg(v5)]
+        match &self.properties {
+            Some(properties) => properties.write(buffer)?,
+            None => {
+                write_remaining_length(buffer, 0)?;
+            }
+        };
 
         buffer.extend_from_slice(&self.payload);
 
@@ -142,6 +135,7 @@ impl Publish {
     }
 }
 
+#[cfg(v5)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct PublishProperties {
     pub payload_format_indicator: Option<u8>,
@@ -154,6 +148,7 @@ pub struct PublishProperties {
     pub content_type: Option<String>,
 }
 
+#[cfg(v5)]
 impl PublishProperties {
     fn len(&self) -> usize {
         let mut len = 0;
@@ -366,7 +361,7 @@ mod test {
         let mut stream = BytesMut::from(&stream[..]);
         let fixed_header = parse_fixed_header(stream.iter()).unwrap();
         let publish_bytes = stream.split_to(fixed_header.frame_length()).freeze();
-        let packet = Publish::read(fixed_header, publish_bytes, Protocol::V4).unwrap();
+        let packet = Publish::read(fixed_header, publish_bytes).unwrap();
 
         let payload = &[0xF1, 0xF2, 0xF3, 0xF4];
         assert_eq!(
@@ -378,7 +373,6 @@ mod test {
                 topic: "a/b".to_owned(),
                 pkid: 10,
                 payload: Bytes::from(&payload[..]),
-                properties: None
             }
         );
     }
@@ -404,7 +398,7 @@ mod test {
         let mut stream = BytesMut::from(&stream[..]);
         let fixed_header = parse_fixed_header(stream.iter()).unwrap();
         let publish_bytes = stream.split_to(fixed_header.frame_length()).freeze();
-        let packet = Publish::read(fixed_header, publish_bytes, Protocol::V4).unwrap();
+        let packet = Publish::read(fixed_header, publish_bytes).unwrap();
 
         assert_eq!(
             packet,
@@ -415,7 +409,6 @@ mod test {
                 topic: "a/b".to_owned(),
                 pkid: 0,
                 payload: Bytes::from(&[0x01, 0x02][..]),
-                properties: None
             }
         );
     }
@@ -429,11 +422,10 @@ mod test {
             topic: "a/b".to_owned(),
             pkid: 10,
             payload: Bytes::from(vec![0xF1, 0xF2, 0xF3, 0xF4]),
-            properties: None,
         };
 
         let mut buf = BytesMut::new();
-        publish.write(&mut buf, Protocol::V4).unwrap();
+        publish.write(&mut buf).unwrap();
 
         assert_eq!(
             buf,
@@ -464,11 +456,10 @@ mod test {
             topic: "a/b".to_owned(),
             pkid: 0,
             payload: Bytes::from(vec![0xE1, 0xE2, 0xE3, 0xE4]),
-            properties: None,
         };
 
         let mut buf = BytesMut::new();
-        publish.write(&mut buf, Protocol::V4).unwrap();
+        publish.write(&mut buf).unwrap();
 
         assert_eq!(
             buf,
@@ -487,6 +478,15 @@ mod test {
             ]
         );
     }
+}
+
+#[cfg(v5)]
+#[cfg(test)]
+mod test {
+    use super::*;
+    use alloc::vec;
+    use bytes::{Bytes, BytesMut};
+    use pretty_assertions::assert_eq;
 
     fn sample_v5() -> Publish {
         let publish_properties = PublishProperties {

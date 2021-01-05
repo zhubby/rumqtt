@@ -21,6 +21,7 @@ pub enum PubAckReason {
 pub struct PubAck {
     pub pkid: u16,
     pub reason: PubAckReason,
+    #[cfg(v5)]
     pub properties: Option<PubAckProperties>,
 }
 
@@ -29,23 +30,25 @@ impl PubAck {
         PubAck {
             pkid,
             reason: PubAckReason::Success,
+            #[cfg(v5)]
             properties: None,
         }
     }
 
-    fn len(&self, protocol: Protocol) -> usize {
-        let mut len = 2 + 1; // pkid + reason
+    fn len(&self) -> usize {
+        let len = 2 + 1; // pkid + reason
 
-        if self.reason == PubAckReason::Success && self.properties.is_none() {
+        // TODO: Verify modified code
+        // if self.reason == PubAckReason::Success && self.properties.is_none() {
+        if self.reason == PubAckReason::Success {
             return 2;
         }
 
-        if protocol == Protocol::V5 {
-            if let Some(properties) = &self.properties {
-                let properties_len = properties.len();
-                let properties_len_len = len_len(properties_len);
-                len += properties_len_len + properties_len;
-            }
+        #[cfg(v5)]
+        if let Some(properties) = &self.properties {
+            let properties_len = properties.len();
+            let properties_len_len = len_len(properties_len);
+            len += properties_len_len + properties_len;
         }
 
         // Unlike other packets, property length can be ignored if there are
@@ -54,11 +57,7 @@ impl PubAck {
         len
     }
 
-    pub fn read(
-        fixed_header: FixedHeader,
-        mut bytes: Bytes,
-        protocol: Protocol,
-    ) -> Result<Self, Error> {
+    pub fn read(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Self, Error> {
         let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
         let pkid = read_u16(&mut bytes)?;
@@ -68,6 +67,7 @@ impl PubAck {
             return Ok(PubAck {
                 pkid,
                 reason: PubAckReason::Success,
+                #[cfg(v5)]
                 properties: None,
             });
         }
@@ -78,53 +78,53 @@ impl PubAck {
             return Ok(PubAck {
                 pkid,
                 reason: reason(ack_reason)?,
+                #[cfg(v5)]
                 properties: None,
             });
         }
 
-        let properties = match protocol {
-            Protocol::V5 => PubAckProperties::extract(&mut bytes)?,
-            Protocol::V4 => None,
-        };
-
         let puback = PubAck {
             pkid,
             reason: reason(ack_reason)?,
-            properties,
+            #[cfg(v5)]
+            properties: PubAckProperties::extract(&mut bytes)?,
         };
 
         Ok(puback)
     }
 
-    pub fn write(&self, buffer: &mut BytesMut, protocol: Protocol) -> Result<usize, Error> {
-        let len = self.len(protocol);
+    pub fn write(&self, buffer: &mut BytesMut) -> Result<usize, Error> {
+        let len = self.len();
         buffer.put_u8(0x40);
 
         let count = write_remaining_length(buffer, len)?;
         buffer.put_u16(self.pkid);
 
-        if self.reason == PubAckReason::Success && self.properties.is_none() {
+        // TODO: Verify modified code
+        // if self.reason == PubAckReason::Success && self.properties.is_none() {
+        if self.reason == PubAckReason::Success {
             return Ok(4);
         }
 
         buffer.put_u8(self.reason as u8);
 
-        if protocol == Protocol::V5 {
-            if let Some(properties) = &self.properties {
-                properties.write(buffer)?;
-            }
+        #[cfg(v5)]
+        if let Some(properties) = &self.properties {
+            properties.write(buffer)?;
         }
 
         Ok(1 + count + len)
     }
 }
 
+#[cfg(v5)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct PubAckProperties {
     pub reason_string: Option<String>,
     pub user_properties: Vec<(String, String)>,
 }
 
+#[cfg(v5)]
 impl PubAckProperties {
     pub fn len(&self) -> usize {
         let mut len = 0;
@@ -217,7 +217,6 @@ fn reason(num: u8) -> Result<PubAckReason, Error> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use alloc::vec;
     use bytes::BytesMut;
     use pretty_assertions::assert_eq;
 
@@ -236,17 +235,25 @@ mod test {
         let mut stream = BytesMut::from(&stream[..]);
         let fixed_header = parse_fixed_header(stream.iter()).unwrap();
         let ack_bytes = stream.split_to(fixed_header.frame_length()).freeze();
-        let packet = PubAck::read(fixed_header, ack_bytes, Protocol::V4).unwrap();
+        let packet = PubAck::read(fixed_header, ack_bytes).unwrap();
 
         assert_eq!(
             packet,
             PubAck {
                 pkid: 10,
                 reason: PubAckReason::Success,
-                properties: None
             }
         );
     }
+}
+
+#[cfg(v5)]
+#[cfg(test)]
+mod test {
+    use super::*;
+    use alloc::vec;
+    use bytes::BytesMut;
+    use pretty_assertions::assert_eq;
 
     fn v5_sample() -> PubAck {
         let properties = PubAckProperties {
