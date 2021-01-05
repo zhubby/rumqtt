@@ -42,7 +42,7 @@ pub fn read(stream: &mut BytesMut, protocol: Protocol, max_size: usize) -> Resul
     let packet = packet.freeze();
     let packet = match packet_type {
         PacketType::Connect => return Err(Error::UnexpectedConnect),
-        PacketType::ConnAck => Packet::ConnAck(ConnAck::read(fixed_header, packet, protocol)?),
+        PacketType::ConnAck => Packet::ConnAck(ConnAck::read(fixed_header, packet)?),
         PacketType::Publish => Packet::Publish(Publish::read(fixed_header, packet, protocol)?),
         PacketType::PubAck => Packet::PubAck(PubAck::read(fixed_header, packet, protocol)?),
         PacketType::PubRec => Packet::PubRec(PubRec::read(fixed_header, packet, protocol)?),

@@ -13,7 +13,10 @@ categories = ["network-programming", "no-std"]
 bench = false
 
 [dependencies]
-bytes = { version = "0.6", default-features = false }
+bytes = { version = "1", default-features = false }
+
+[features]
+v5 = []
 
 [dev-dependencies]
 pretty_assertions = "0.6.1"

@@ -1,5 +1,7 @@
 use super::*;
+#[cfg(v5)]
 use alloc::string::String;
+#[cfg(v5)]
 use alloc::vec::Vec;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
@@ -36,6 +38,7 @@ pub enum ConnectReturnCode {
 pub struct ConnAck {
     pub session_present: bool,
     pub code: ConnectReturnCode,
+    #[cfg(v5)]
     pub properties: Option<ConnAckProperties>,
 }
 
@@ -44,30 +47,26 @@ impl ConnAck {
         ConnAck {
             code,
             session_present,
+            #[cfg(v5)]
             properties: None,
         }
     }
 
-    fn len(&self, protocol: Protocol) -> usize {
-        let mut len = 1  // sesssion present
+    fn len(&self) -> usize {
+        let len = 1  // sesssion present
                         + 1; // code
 
-        if protocol == Protocol::V5 {
-            if let Some(properties) = &self.properties {
-                let properties_len = properties.len();
-                let properties_len_len = len_len(properties_len);
-                len += properties_len_len + properties_len;
-            }
+        #[cfg(v5)]
+        if let Some(properties) = &self.properties {
+            let properties_len = properties.len();
+            let properties_len_len = len_len(properties_len);
+            len += properties_len_len + properties_len;
         }
 
         len
     }
 
-    pub fn read(
-        fixed_header: FixedHeader,
-        mut bytes: Bytes,
-        protocol: Protocol,
-    ) -> Result<Self, Error> {
+    pub fn read(fixed_header: FixedHeader, mut bytes: Bytes) -> Result<Self, Error> {
         let variable_header_index = fixed_header.fixed_header_len;
         bytes.advance(variable_header_index);
 
@@ -76,38 +75,34 @@ impl ConnAck {
 
         let session_present = (flags & 0x01) == 1;
         let code = connect_return(return_code)?;
-        let properties = match protocol {
-            Protocol::V5 => ConnAckProperties::extract(&mut bytes)?,
-            Protocol::V4 => None,
-        };
-
         let connack = ConnAck {
             session_present,
             code,
-            properties,
+            #[cfg(v5)]
+            properties: ConnAckProperties::extract(&mut bytes)?,
         };
 
         Ok(connack)
     }
 
-    pub fn write(&self, buffer: &mut BytesMut, protocol: Protocol) -> Result<usize, Error> {
-        let len = self.len(protocol);
+    pub fn write(&self, buffer: &mut BytesMut) -> Result<usize, Error> {
+        let len = self.len();
         buffer.put_u8(0x20);
 
         let count = write_remaining_length(buffer, len)?;
         buffer.put_u8(self.session_present as u8);
         buffer.put_u8(self.code as u8);
 
-        if protocol == Protocol::V5 {
-            if let Some(properties) = &self.properties {
-                properties.write(buffer)?;
-            }
+        #[cfg(v5)]
+        if let Some(properties) = &self.properties {
+            properties.write(buffer)?;
         }
 
         Ok(1 + count + len)
     }
 }
 
+#[cfg(v5)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConnAckProperties {
     pub session_expiry_interval: Option<u32>,
@@ -129,6 +124,7 @@ pub struct ConnAckProperties {
     pub authentication_data: Option<Bytes>,
 }
 
+#[cfg(v5)]
 impl ConnAckProperties {
     pub fn new() -> ConnAckProperties {
         ConnAckProperties {
@@ -508,14 +504,13 @@ mod test {
         stream.extend_from_slice(&packetstream[..]);
         let fixed_header = parse_fixed_header(stream.iter()).unwrap();
         let connack_bytes = stream.split_to(fixed_header.frame_length()).freeze();
-        let connack = ConnAck::read(fixed_header, connack_bytes, Protocol::V4).unwrap();
+        let connack = ConnAck::read(fixed_header, connack_bytes).unwrap();
 
         assert_eq!(
             connack,
             ConnAck {
                 session_present: true,
                 code: ConnectReturnCode::Success,
-                properties: None
             }
         );
     }
@@ -525,13 +520,21 @@ mod test {
         let connack = ConnAck {
             session_present: true,
             code: ConnectReturnCode::Success,
-            properties: None,
         };
 
         let mut buf = BytesMut::new();
-        connack.write(&mut buf, Protocol::V4).unwrap();
+        connack.write(&mut buf).unwrap();
         assert_eq!(buf, vec![0b0010_0000, 0x02, 0x01, 0x00]);
     }
+}
+
+#[cfg(v5)]
+#[cfg(test)]
+mod test {
+    use super::*;
+    use alloc::vec;
+    use bytes::{Bytes, BytesMut};
+    use pretty_assertions::assert_eq;
 
     fn v5_sample() -> ConnAck {
         let properties = ConnAckProperties {
