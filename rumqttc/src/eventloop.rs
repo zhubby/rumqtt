@@ -279,34 +279,36 @@ async fn network_connect(options: &MqttOptions) -> Result<Network, ConnectionErr
             Network::new(socket, options.max_incoming_packet_size)
         }
         Transport::Ws => {
-            let request = http::Request::builder()
-                .method(http::Method::GET)
-                .uri(options.broker_addr.as_str())
-                .header("Sec-WebSocket-Protocol", "mqttv3.1")
-                .body(())
-                .unwrap();
+            todo!()
+            // let request = http::Request::builder()
+            //     .method(http::Method::GET)
+            //     .uri(options.broker_addr.as_str())
+            //     .header("Sec-WebSocket-Protocol", "mqttv3.1")
+            //     .body(())
+            //     .unwrap();
 
-            let (socket, _) = connect_async(request)
-                .await
-                .map_err(|e| io::Error::new(io::ErrorKind::ConnectionRefused, e))?;
+            // let (socket, _) = connect_async(request)
+            //     .await
+            //     .map_err(|e| io::Error::new(io::ErrorKind::ConnectionRefused, e))?;
 
-            Network::new(WsStream::new(socket), options.max_incoming_packet_size)
+            // Network::new(WsStream::new(socket), options.max_incoming_packet_size)
         }
         Transport::Wss(tls_config) => {
-            let request = http::Request::builder()
-                .method(http::Method::GET)
-                .uri(options.broker_addr.as_str())
-                .header("Sec-WebSocket-Protocol", "mqttv3.1")
-                .body(())
-                .unwrap();
+            todo!()
+            // let request = http::Request::builder()
+            //     .method(http::Method::GET)
+            //     .uri(options.broker_addr.as_str())
+            //     .header("Sec-WebSocket-Protocol", "mqttv3.1")
+            //     .body(())
+            //     .unwrap();
 
-            let connector = tls::tls_connector(&tls_config).await?;
+            // let connector = tls::tls_connector(&tls_config).await?;
 
-            let (socket, _) = connect_async_with_tls_connector(request, Some(connector))
-                .await
-                .map_err(|e| io::Error::new(io::ErrorKind::ConnectionRefused, e))?;
+            // let (socket, _) = connect_async_with_tls_connector(request, Some(connector))
+            //     .await
+            //     .map_err(|e| io::Error::new(io::ErrorKind::ConnectionRefused, e))?;
 
-            Network::new(WsStream::new(socket), options.max_incoming_packet_size)
+            // Network::new(WsStream::new(socket), options.max_incoming_packet_size)
         }
     };
 
