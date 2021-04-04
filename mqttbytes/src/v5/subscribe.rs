@@ -9,7 +9,7 @@ use core::fmt;
 pub struct Subscribe {
     pub pkid: u16,
     pub filters: Vec<SubscribeFilter>,
-    pub properties: Option<SubscribeProperties>,
+    pub properties: SubscribeProperties,
 }
 
 impl Subscribe {
@@ -27,7 +27,7 @@ impl Subscribe {
         Subscribe {
             pkid: 0,
             filters,
-            properties: None,
+            properties: SubscribeProperties::default(),
         }
     }
 
@@ -38,7 +38,7 @@ impl Subscribe {
         Subscribe {
             pkid: 0,
             filters: topics.into_iter().collect(),
-            properties: None,
+            properties: SubscribeProperties::default(),
         }
     }
 
@@ -46,7 +46,7 @@ impl Subscribe {
         Subscribe {
             pkid: 0,
             filters: Vec::new(),
-            properties: None,
+            properties: SubscribeProperties::default(),
         }
     }
 
@@ -66,14 +66,9 @@ impl Subscribe {
     pub fn len(&self) -> usize {
         let mut len = 2 + self.filters.iter().fold(0, |s, t| s + t.len());
 
-        if let Some(properties) = &self.properties {
-            let properties_len = properties.len();
-            let properties_len_len = len_len(properties_len);
-            len += properties_len_len + properties_len;
-        } else {
-            // just 1 byte representing 0 len
-            len += 1;
-        }
+        let properties_len = self.properties.len();
+        let properties_len_len = len_len(properties_len);
+        len += properties_len_len + properties_len;
 
         len
     }
@@ -135,13 +130,7 @@ impl Subscribe {
 
         // write packet id
         buffer.put_u16(self.pkid);
-
-        match &self.properties {
-            Some(properties) => properties.write(buffer)?,
-            None => {
-                write_remaining_length(buffer, 0)?;
-            }
-        };
+        self.properties.write(buffer)?;
 
         // write filters
         for filter in self.filters.iter() {
@@ -152,7 +141,7 @@ impl Subscribe {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct SubscribeProperties {
     pub id: Option<usize>,
     pub user_properties: Vec<(String, String)>,
@@ -173,7 +162,7 @@ impl SubscribeProperties {
         len
     }
 
-    pub fn extract(mut bytes: &mut Bytes) -> Result<Option<SubscribeProperties>, Error> {
+    pub fn extract(mut bytes: &mut Bytes) -> Result<SubscribeProperties, Error> {
         let mut id = None;
         let mut user_properties = Vec::new();
 
@@ -181,7 +170,7 @@ impl SubscribeProperties {
         bytes.advance(properties_len_len);
 
         if properties_len == 0 {
-            return Ok(None);
+            return Ok(SubscribeProperties::default());
         }
 
         let mut cursor = 0;
@@ -208,10 +197,10 @@ impl SubscribeProperties {
             }
         }
 
-        Ok(Some(SubscribeProperties {
+        Ok(SubscribeProperties {
             id,
             user_properties,
-        }))
+        })
     }
 
     fn write(&self, buffer: &mut BytesMut) -> Result<(), Error> {
@@ -346,7 +335,7 @@ mod test {
         Subscribe {
             pkid: 42,
             filters: vec![filter],
-            properties: Some(subscribe_properties),
+            properties: subscribe_properties,
         }
     }
 
@@ -393,7 +382,7 @@ mod test {
         Subscribe {
             pkid: 42,
             filters: vec![filter],
-            properties: None,
+            properties: SubscribeProperties::default(),
         }
     }
 

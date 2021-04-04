@@ -12,7 +12,7 @@ pub struct Publish {
     pub retain: bool,
     pub topic: String,
     pub pkid: u16,
-    pub properties: Option<PublishProperties>,
+    pub properties: PublishProperties,
     pub payload: Bytes,
 }
 
@@ -24,7 +24,7 @@ impl Publish {
             retain: false,
             pkid: 0,
             topic: topic.into(),
-            properties: None,
+            properties: PublishProperties::default(),
             payload: Bytes::from(payload.into()),
         }
     }
@@ -36,7 +36,7 @@ impl Publish {
             retain: false,
             pkid: 0,
             topic: topic.into(),
-            properties: None,
+            properties: PublishProperties::default(),
             payload,
         }
     }
@@ -47,17 +47,9 @@ impl Publish {
             len += 2;
         }
 
-        match &self.properties {
-            Some(properties) => {
-                let properties_len = properties.len();
-                let properties_len_len = len_len(properties_len);
-                len += properties_len_len + properties_len;
-            }
-            None => {
-                // just 1 byte representing 0 len
-                len += 1;
-            }
-        }
+        let properties_len = self.properties.len();
+        let properties_len_len = len_len(properties_len);
+        len += properties_len_len + properties_len;
 
         len += self.payload.len();
         len
@@ -115,13 +107,7 @@ impl Publish {
             buffer.put_u16(pkid);
         }
 
-        match &self.properties {
-            Some(properties) => properties.write(buffer)?,
-            None => {
-                write_remaining_length(buffer, 0)?;
-            }
-        };
-
+        self.properties.write(buffer)?;
         buffer.extend_from_slice(&self.payload);
 
         // TODO: Returned length is wrong in other packets. Fix it
@@ -129,7 +115,7 @@ impl Publish {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct PublishProperties {
     pub payload_format_indicator: Option<u8>,
     pub message_expiry_interval: Option<u32>,
@@ -180,7 +166,7 @@ impl PublishProperties {
         len
     }
 
-    fn extract(mut bytes: &mut Bytes) -> Result<Option<PublishProperties>, Error> {
+    fn extract(mut bytes: &mut Bytes) -> Result<PublishProperties, Error> {
         let mut payload_format_indicator = None;
         let mut message_expiry_interval = None;
         let mut topic_alias = None;
@@ -193,7 +179,7 @@ impl PublishProperties {
         let (properties_len_len, properties_len) = length(bytes.iter())?;
         bytes.advance(properties_len_len);
         if properties_len == 0 {
-            return Ok(None);
+            return Ok(PublishProperties::default());
         }
 
         let mut cursor = 0;
@@ -246,7 +232,7 @@ impl PublishProperties {
             }
         }
 
-        Ok(Some(PublishProperties {
+        Ok(PublishProperties {
             payload_format_indicator,
             message_expiry_interval,
             topic_alias,
@@ -255,7 +241,7 @@ impl PublishProperties {
             user_properties,
             subscription_identifiers,
             content_type,
-        }))
+        })
     }
 
     fn write(&self, buffer: &mut BytesMut) -> Result<(), Error> {
@@ -346,7 +332,7 @@ mod test {
             retain: false,
             topic: "test".to_string(),
             pkid: 42,
-            properties: Some(publish_properties),
+            properties: publish_properties,
             payload: Bytes::from(vec![b't', b'e', b's', b't']),
         }
     }

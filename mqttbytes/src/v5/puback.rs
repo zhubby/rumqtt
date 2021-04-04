@@ -21,7 +21,7 @@ pub enum PubAckReason {
 pub struct PubAck {
     pub pkid: u16,
     pub reason: PubAckReason,
-    pub properties: Option<PubAckProperties>,
+    pub properties: PubAckProperties,
 }
 
 impl PubAck {
@@ -29,7 +29,7 @@ impl PubAck {
         PubAck {
             pkid,
             reason: PubAckReason::Success,
-            properties: None,
+            properties: PubAckProperties::default(),
         }
     }
 
@@ -37,15 +37,13 @@ impl PubAck {
         let mut len = 2 + 1; // pkid + reason
 
         // If there are no properties, sending reason code is optional
-        if self.reason == PubAckReason::Success && self.properties.is_none() {
+        if self.reason == PubAckReason::Success && self.properties.len() == 0 {
             return 2;
         }
 
-        if let Some(properties) = &self.properties {
-            let properties_len = properties.len();
-            let properties_len_len = len_len(properties_len);
-            len += properties_len_len + properties_len;
-        }
+        let properties_len = self.properties.len();
+        let properties_len_len = len_len(properties_len);
+        len += properties_len_len + properties_len;
 
         // Unlike other packets, property length can be ignored if there are
         // no properties in acks
@@ -63,7 +61,7 @@ impl PubAck {
             return Ok(PubAck {
                 pkid,
                 reason: PubAckReason::Success,
-                properties: None,
+                properties: PubAckProperties::default(),
             });
         }
 
@@ -73,7 +71,7 @@ impl PubAck {
             return Ok(PubAck {
                 pkid,
                 reason: reason(ack_reason)?,
-                properties: None,
+                properties: PubAckProperties::default(),
             });
         }
 
@@ -94,20 +92,18 @@ impl PubAck {
         buffer.put_u16(self.pkid);
 
         // Reason code is optional with success if there are no properties
-        if self.reason == PubAckReason::Success && self.properties.is_none() {
+        if self.reason == PubAckReason::Success && self.properties.len() == 0 {
             return Ok(4);
         }
 
         buffer.put_u8(self.reason as u8);
-        if let Some(properties) = &self.properties {
-            properties.write(buffer)?;
-        }
+        self.properties.write(buffer)?;
 
         Ok(1 + count + len)
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct PubAckProperties {
     pub reason_string: Option<String>,
     pub user_properties: Vec<(String, String)>,
@@ -128,14 +124,14 @@ impl PubAckProperties {
         len
     }
 
-    pub fn extract(mut bytes: &mut Bytes) -> Result<Option<PubAckProperties>, Error> {
+    pub fn extract(mut bytes: &mut Bytes) -> Result<PubAckProperties, Error> {
         let mut reason_string = None;
         let mut user_properties = Vec::new();
 
         let (properties_len_len, properties_len) = length(bytes.iter())?;
         bytes.advance(properties_len_len);
         if properties_len == 0 {
-            return Ok(None);
+            return Ok(PubAckProperties::default());
         }
 
         let mut cursor = 0;
@@ -160,10 +156,10 @@ impl PubAckProperties {
             }
         }
 
-        Ok(Some(PubAckProperties {
+        Ok(PubAckProperties {
             reason_string,
             user_properties,
-        }))
+        })
     }
 
     fn write(&self, buffer: &mut BytesMut) -> Result<(), Error> {

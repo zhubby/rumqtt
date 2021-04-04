@@ -19,7 +19,7 @@ pub struct Connect {
     /// Login credentials
     pub login: Option<Login>,
     /// Properties
-    pub properties: Option<ConnectProperties>,
+    pub properties: ConnectProperties,
 }
 
 impl Connect {
@@ -27,7 +27,7 @@ impl Connect {
         Connect {
             protocol: Protocol::V5,
             keep_alive: 10,
-            properties: None,
+            properties: ConnectProperties::default(),
             client_id: id.into(),
             clean_session: true,
             last_will: None,
@@ -51,17 +51,9 @@ impl Connect {
                               + 1            // connect flags
                               + 2; // keep alive
 
-        match &self.properties {
-            Some(properties) => {
-                let properties_len = properties.len();
-                let properties_len_len = len_len(properties_len);
-                len += properties_len_len + properties_len;
-            }
-            None => {
-                // just 1 byte representing 0 len
-                len += 1;
-            }
-        }
+        let properties_len = self.properties.len();
+        let properties_len_len = len_len(properties_len);
+        len += properties_len_len + properties_len;
 
         len += 2 + self.client_id.len();
 
@@ -90,7 +82,6 @@ impl Connect {
         }
 
         let protocol = match protocol_level {
-            4 => Protocol::V4,
             5 => Protocol::V5,
             num => return Err(Error::InvalidProtocolLevel(num)),
         };
@@ -102,7 +93,7 @@ impl Connect {
         // Properties in variable header
         let properties = match protocol {
             Protocol::V5 => ConnectProperties::read(&mut bytes)?,
-            Protocol::V4 => None,
+            Protocol::V4 => unreachable!(),
         };
 
         let client_id = read_mqtt_string(&mut bytes)?;
@@ -143,13 +134,7 @@ impl Connect {
         buffer.put_u8(connect_flags);
         buffer.put_u16(self.keep_alive);
 
-        match &self.properties {
-            Some(properties) => properties.write(buffer)?,
-            None => {
-                write_remaining_length(buffer, 0)?;
-            }
-        };
-
+        self.properties.write(buffer)?;
         write_mqtt_string(buffer, &self.client_id);
 
         if let Some(last_will) = &self.last_will {
@@ -480,7 +465,7 @@ impl Login {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct ConnectProperties {
     /// Expiry interval property after loosing connection
     pub session_expiry_interval: Option<u32>,
@@ -515,7 +500,7 @@ impl ConnectProperties {
         }
     }
 
-    fn read(mut bytes: &mut Bytes) -> Result<Option<ConnectProperties>, Error> {
+    fn read(mut bytes: &mut Bytes) -> Result<ConnectProperties, Error> {
         let mut session_expiry_interval = None;
         let mut receive_maximum = None;
         let mut max_packet_size = None;
@@ -529,7 +514,7 @@ impl ConnectProperties {
         let (properties_len_len, properties_len) = length(bytes.iter())?;
         bytes.advance(properties_len_len);
         if properties_len == 0 {
-            return Ok(None);
+            return Ok(ConnectProperties::default());
         }
 
         let mut cursor = 0;
@@ -582,7 +567,7 @@ impl ConnectProperties {
             }
         }
 
-        Ok(Some(ConnectProperties {
+        Ok(ConnectProperties {
             session_expiry_interval,
             receive_maximum,
             max_packet_size,
@@ -592,7 +577,7 @@ impl ConnectProperties {
             user_properties,
             authentication_method,
             authentication_data,
-        }))
+        })
     }
 
     fn len(&self) -> usize {
@@ -734,7 +719,7 @@ mod test {
         Connect {
             protocol: Protocol::V5,
             keep_alive: 0,
-            properties: Some(connect_properties),
+            properties: connect_properties,
             client_id: "my-device".to_string(),
             clean_session: true,
             last_will: Some(will),
@@ -808,7 +793,7 @@ mod test {
         Connect {
             protocol: Protocol::V5,
             keep_alive: 10,
-            properties: None,
+            properties: ConnectProperties::default(),
             client_id: "hackathonmqtt5test".to_owned(),
             clean_session: true,
             last_will: None,
@@ -882,7 +867,7 @@ mod test {
         Connect {
             protocol: Protocol::V5,
             keep_alive: 0,
-            properties: Some(connect_properties),
+            properties: connect_properties,
             client_id: "my-device".to_string(),
             clean_session: true,
             last_will: Some(will),

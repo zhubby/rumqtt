@@ -36,7 +36,7 @@ pub enum ConnectReturnCode {
 pub struct ConnAck {
     pub session_present: bool,
     pub code: ConnectReturnCode,
-    pub properties: Option<ConnAckProperties>,
+    pub properties: ConnAckProperties,
 }
 
 impl ConnAck {
@@ -44,7 +44,7 @@ impl ConnAck {
         ConnAck {
             code,
             session_present,
-            properties: None,
+            properties: ConnAckProperties::default(),
         }
     }
 
@@ -52,11 +52,9 @@ impl ConnAck {
         let mut len = 1  // sesssion present
                         + 1; // code
 
-        if let Some(properties) = &self.properties {
-            let properties_len = properties.len();
-            let properties_len_len = len_len(properties_len);
-            len += properties_len_len + properties_len;
-        }
+        let properties_len = self.properties.len();
+        let properties_len_len = len_len(properties_len);
+        len += properties_len_len + properties_len;
 
         len
     }
@@ -87,15 +85,12 @@ impl ConnAck {
         buffer.put_u8(self.session_present as u8);
         buffer.put_u8(self.code as u8);
 
-        if let Some(properties) = &self.properties {
-            properties.write(buffer)?;
-        }
-
+        self.properties.write(buffer)?;
         Ok(1 + count + len)
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct ConnAckProperties {
     pub session_expiry_interval: Option<u32>,
     pub receive_max: Option<u16>,
@@ -213,7 +208,7 @@ impl ConnAckProperties {
         len
     }
 
-    pub fn extract(mut bytes: &mut Bytes) -> Result<Option<ConnAckProperties>, Error> {
+    pub fn extract(mut bytes: &mut Bytes) -> Result<ConnAckProperties, Error> {
         let mut session_expiry_interval = None;
         let mut receive_max = None;
         let mut max_qos = None;
@@ -235,7 +230,7 @@ impl ConnAckProperties {
         let (properties_len_len, properties_len) = length(bytes.iter())?;
         bytes.advance(properties_len_len);
         if properties_len == 0 {
-            return Ok(None);
+            return Ok(ConnAckProperties::default());
         }
 
         let mut cursor = 0;
@@ -325,7 +320,7 @@ impl ConnAckProperties {
             }
         }
 
-        Ok(Some(ConnAckProperties {
+        Ok(ConnAckProperties {
             session_expiry_interval,
             receive_max,
             max_qos,
@@ -343,7 +338,7 @@ impl ConnAckProperties {
             server_reference,
             authentication_method,
             authentication_data,
-        }))
+        })
     }
 
     fn write(&self, buffer: &mut BytesMut) -> Result<(), Error> {
@@ -502,7 +497,7 @@ mod test {
         ConnAck {
             session_present: false,
             code: ConnectReturnCode::Success,
-            properties: Some(properties),
+            properties,
         }
     }
 

@@ -21,7 +21,7 @@ pub enum PubRecReason {
 pub struct PubRec {
     pub pkid: u16,
     pub reason: PubRecReason,
-    pub properties: Option<PubRecProperties>,
+    pub properties: PubRecProperties,
 }
 
 impl PubRec {
@@ -29,7 +29,7 @@ impl PubRec {
         PubRec {
             pkid,
             reason: PubRecReason::Success,
-            properties: None,
+            properties: PubRecProperties::default(),
         }
     }
 
@@ -37,15 +37,13 @@ impl PubRec {
         let mut len = 2 + 1; // pkid + reason
 
         // If there are no properties during success, sending reason code is optional
-        if self.reason == PubRecReason::Success && self.properties.is_none() {
+        if self.reason == PubRecReason::Success && self.properties.len() == 0 {
             return 2;
         }
 
-        if let Some(properties) = &self.properties {
-            let properties_len = properties.len();
-            let properties_len_len = len_len(properties_len);
-            len += properties_len_len + properties_len;
-        }
+        let properties_len = self.properties.len();
+        let properties_len_len = len_len(properties_len);
+        len += properties_len_len + properties_len;
 
         // Unlike other packets, property length can be ignored if there are
         // no properties in acks
@@ -60,7 +58,7 @@ impl PubRec {
             return Ok(PubRec {
                 pkid,
                 reason: PubRecReason::Success,
-                properties: None,
+                properties: PubRecProperties::default(),
             });
         }
 
@@ -69,7 +67,7 @@ impl PubRec {
             return Ok(PubRec {
                 pkid,
                 reason: reason(ack_reason)?,
-                properties: None,
+                properties: PubRecProperties::default(),
             });
         }
 
@@ -89,21 +87,19 @@ impl PubRec {
         buffer.put_u16(self.pkid);
 
         // If there are no properties during success, sending reason code is optional
-        if self.reason == PubRecReason::Success && self.properties.is_none() {
+        if self.reason == PubRecReason::Success && self.properties.len() == 0 {
             return Ok(4);
         }
 
         buffer.put_u8(self.reason as u8);
 
-        if let Some(properties) = &self.properties {
-            properties.write(buffer)?;
-        }
+        self.properties.write(buffer)?;
 
         Ok(1 + count + len)
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct PubRecProperties {
     pub reason_string: Option<String>,
     pub user_properties: Vec<(String, String)>,
@@ -124,14 +120,14 @@ impl PubRecProperties {
         len
     }
 
-    pub fn extract(mut bytes: &mut Bytes) -> Result<Option<PubRecProperties>, Error> {
+    pub fn extract(mut bytes: &mut Bytes) -> Result<PubRecProperties, Error> {
         let mut reason_string = None;
         let mut user_properties = Vec::new();
 
         let (properties_len_len, properties_len) = length(bytes.iter())?;
         bytes.advance(properties_len_len);
         if properties_len == 0 {
-            return Ok(None);
+            return Ok(PubRecProperties::default());
         }
 
         let mut cursor = 0;
@@ -156,10 +152,10 @@ impl PubRecProperties {
             }
         }
 
-        Ok(Some(PubRecProperties {
+        Ok(PubRecProperties {
             reason_string,
             user_properties,
-        }))
+        })
     }
 
     fn write(&self, buffer: &mut BytesMut) -> Result<(), Error> {
@@ -214,7 +210,7 @@ mod test {
         PubRec {
             pkid: 42,
             reason: PubRecReason::NoMatchingSubscribers,
-            properties: Some(properties),
+            properties,
         }
     }
 

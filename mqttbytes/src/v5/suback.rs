@@ -8,7 +8,7 @@ use std::convert::{TryFrom, TryInto};
 pub struct SubAck {
     pub pkid: u16,
     pub return_codes: Vec<SubscribeReasonCode>,
-    pub properties: Option<SubAckProperties>,
+    pub properties: SubAckProperties,
 }
 
 impl SubAck {
@@ -16,24 +16,16 @@ impl SubAck {
         SubAck {
             pkid,
             return_codes,
-            properties: None,
+            properties: SubAckProperties::default(),
         }
     }
 
     pub fn len(&self) -> usize {
         let mut len = 2 + self.return_codes.len();
 
-        match &self.properties {
-            Some(properties) => {
-                let properties_len = properties.len();
-                let properties_len_len = len_len(properties_len);
-                len += properties_len_len + properties_len;
-            }
-            None => {
-                // just 1 byte representing 0 len
-                len += 1;
-            }
-        }
+        let properties_len = self.properties.len();
+        let properties_len_len = len_len(properties_len);
+        len += properties_len_len + properties_len;
 
         len
     }
@@ -71,20 +63,14 @@ impl SubAck {
 
         buffer.put_u16(self.pkid);
 
-        match &self.properties {
-            Some(properties) => properties.write(buffer)?,
-            None => {
-                write_remaining_length(buffer, 0)?;
-            }
-        };
-
+        self.properties.write(buffer)?;
         let p: Vec<u8> = self.return_codes.iter().map(|code| *code as u8).collect();
         buffer.extend_from_slice(&p);
         Ok(1 + remaining_len_bytes + remaining_len)
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct SubAckProperties {
     pub reason_string: Option<String>,
     pub user_properties: Vec<(String, String)>,
@@ -105,14 +91,14 @@ impl SubAckProperties {
         len
     }
 
-    pub fn extract(mut bytes: &mut Bytes) -> Result<Option<SubAckProperties>, Error> {
+    pub fn extract(mut bytes: &mut Bytes) -> Result<SubAckProperties, Error> {
         let mut reason_string = None;
         let mut user_properties = Vec::new();
 
         let (properties_len_len, properties_len) = length(bytes.iter())?;
         bytes.advance(properties_len_len);
         if properties_len == 0 {
-            return Ok(None);
+            return Ok(SubAckProperties::default());
         }
 
         let mut cursor = 0;
@@ -137,10 +123,10 @@ impl SubAckProperties {
             }
         }
 
-        Ok(Some(SubAckProperties {
+        Ok(SubAckProperties {
             reason_string,
             user_properties,
-        }))
+        })
     }
 
     fn write(&self, buffer: &mut BytesMut) -> Result<(), Error> {
@@ -224,7 +210,7 @@ mod test {
                 SubscribeReasonCode::QoS2,
                 SubscribeReasonCode::Unspecified,
             ],
-            properties: Some(properties),
+            properties,
         }
     }
 
