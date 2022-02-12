@@ -247,7 +247,7 @@ impl Client {
 
     /// Sends a MQTT Publish to the eventloop
     pub fn publish<S, V>(
-        &mut self,
+        &self,
         topic: S,
         qos: QoS,
         retain: bool,
@@ -262,7 +262,7 @@ impl Client {
     }
 
     pub fn try_publish<S, V>(
-        &mut self,
+        &self,
         topic: S,
         qos: QoS,
         retain: bool,
@@ -298,14 +298,14 @@ impl Client {
 
 
     /// Sends a MQTT Subscribe to the eventloop
-    pub fn subscribe<S: Into<String>>(&mut self, topic: S, qos: QoS) -> Result<(), ClientError> {
+    pub fn subscribe<S: Into<String>>(&self, topic: S, qos: QoS) -> Result<(), ClientError> {
         pollster::block_on(self.client.subscribe(topic, qos))?;
         Ok(())
     }
 
     /// Sends a MQTT Subscribe to the eventloop
     pub fn try_subscribe<S: Into<String>>(
-        &mut self,
+        &self,
         topic: S,
         qos: QoS,
     ) -> Result<(), ClientError> {
@@ -314,14 +314,14 @@ impl Client {
     }
 
     /// Sends a MQTT Subscribe for multiple topics to the eventloop
-    pub fn subscribe_many<T>(&mut self, topics: T) -> Result<(), ClientError>
+    pub fn subscribe_many<T>(&self, topics: T) -> Result<(), ClientError>
     where
         T: IntoIterator<Item = SubscribeFilter>,
     {
         pollster::block_on(self.client.subscribe_many(topics))
     }
 
-    pub fn try_subscribe_many<T>(&mut self, topics: T) -> Result<(), ClientError>
+    pub fn try_subscribe_many<T>(&self, topics: T) -> Result<(), ClientError>
     where
         T: IntoIterator<Item = SubscribeFilter>,
     {
@@ -329,31 +329,31 @@ impl Client {
     }
 
     /// Sends a MQTT Unsubscribe to the eventloop
-    pub fn unsubscribe<S: Into<String>>(&mut self, topic: S) -> Result<(), ClientError> {
+    pub fn unsubscribe<S: Into<String>>(&self, topic: S) -> Result<(), ClientError> {
         pollster::block_on(self.client.unsubscribe(topic))?;
         Ok(())
     }
 
     /// Sends a MQTT Unsubscribe to the eventloop
-    pub fn try_unsubscribe<S: Into<String>>(&mut self, topic: S) -> Result<(), ClientError> {
+    pub fn try_unsubscribe<S: Into<String>>(&self, topic: S) -> Result<(), ClientError> {
         self.client.try_unsubscribe(topic)?;
         Ok(())
     }
 
     /// Sends a MQTT disconnect to the eventloop
-    pub fn disconnect(&mut self) -> Result<(), ClientError> {
+    pub fn disconnect(&self) -> Result<(), ClientError> {
         pollster::block_on(self.client.disconnect())?;
         Ok(())
     }
 
     /// Sends a MQTT disconnect to the eventloop
-    pub fn try_disconnect(&mut self) -> Result<(), ClientError> {
+    pub fn try_disconnect(&self) -> Result<(), ClientError> {
         self.client.try_disconnect()?;
         Ok(())
     }
 
     /// Stops the eventloop right away
-    pub fn cancel(&mut self) -> Result<(), ClientError> {
+    pub fn cancel(&self) -> Result<(), ClientError> {
         pollster::block_on(self.client.cancel())?;
         Ok(())
     }
