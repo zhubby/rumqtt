@@ -5,7 +5,10 @@ use tokio::{task, time};
 mod broker;
 
 use broker::*;
-use rumqttc::*;
+use rumqttc::async_channel::Sender;
+use rumqttc::mqttbytes::v4::{ConnAck, ConnectReturnCode, Packet, Publish};
+use rumqttc::{mqttbytes::QoS, ConnectionError, Event, EventLoop};
+use rumqttc::{Incoming, MqttOptions, Outgoing, Request, StateError};
 
 async fn start_requests(count: u8, qos: QoS, delay: u64, requests_tx: Sender<Request>) {
     for i in 1..=count {

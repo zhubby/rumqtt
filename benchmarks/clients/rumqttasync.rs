@@ -1,4 +1,4 @@
-use rumqttc::*;
+use rumqttc::{mqttbytes::QoS, AsyncClient, Event, Incoming, MqttOptions};
 use std::error::Error;
 use std::time::{Duration, Instant};
 

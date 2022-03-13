@@ -9,7 +9,8 @@ use tokio::{task, time};
 
 use async_channel::{bounded, Receiver, Sender};
 use bytes::BytesMut;
-use rumqttc::{Event, Incoming, Outgoing, Packet};
+use rumqttc::mqttbytes::v4::Packet;
+use rumqttc::{Event, Incoming, Outgoing};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 pub struct Broker {

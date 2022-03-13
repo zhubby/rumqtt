@@ -1,6 +1,6 @@
 use tokio::{task, time};
 
-use rumqttc::{self, AsyncClient, Event, EventLoop, Incoming, MqttOptions, QoS};
+use rumqttc::{self, mqttbytes::QoS, AsyncClient, Event, EventLoop, Incoming, MqttOptions};
 use std::error::Error;
 use std::time::Duration;
 

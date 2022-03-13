@@ -9,7 +9,7 @@
 //! ----------------------------
 //!
 //! ```no_run
-//! use rumqttc::{MqttOptions, Client, QoS};
+//! use rumqttc::{MqttOptions, Client, mqttbytes::QoS};
 //! use std::time::Duration;
 //! use std::thread;
 //!
@@ -33,7 +33,7 @@
 //! ------------------------------
 //!
 //! ```no_run
-//! use rumqttc::{MqttOptions, AsyncClient, QoS};
+//! use rumqttc::{MqttOptions, AsyncClient, mqttbytes::QoS};
 //! use tokio::{task, time};
 //! use std::time::Duration;
 //! use std::error::Error;
@@ -110,11 +110,10 @@ pub mod mqttbytes;
 mod state;
 mod tls;
 
-pub use async_channel::{SendError, Sender, TrySendError};
+pub use async_channel;
 pub use client::{AsyncClient, Client, ClientError, Connection};
 pub use eventloop::{ConnectionError, Event, EventLoop};
-pub use mqttbytes::v4::*;
-pub use mqttbytes::*;
+use mqttbytes::v4::*;
 pub use state::{MqttState, StateError};
 pub use tls::Error;
 pub use tokio_rustls::rustls::ClientConfig;
