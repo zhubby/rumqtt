@@ -113,7 +113,7 @@ mod tls;
 pub use async_channel;
 pub use client::{AsyncClient, Client, ClientError, Connection};
 pub use eventloop::{ConnectionError, Event, EventLoop};
-use mqttbytes::v4::*;
+use mqttbytes::*;
 pub use state::{MqttState, StateError};
 pub use tls::Error;
 pub use tokio_rustls::rustls::ClientConfig;

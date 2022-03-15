@@ -1,6 +1,6 @@
 //! This module offers a high level synchronous and asynchronous abstraction to
 //! async eventloop.
-use crate::mqttbytes::{self, v4::*, QoS};
+use crate::mqttbytes::{self, Publish, Subscribe, SubscribeFilter, QoS, Unsubscribe, PubAck, PubRec, };
 use crate::{ConnectionError, Event, EventLoop, MqttOptions, Request};
 
 use async_channel::{SendError, Sender, TrySendError};

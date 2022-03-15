@@ -1,7 +1,7 @@
 use crate::{Event, Incoming, Outgoing, Request};
 
-use crate::mqttbytes::v4::*;
-use crate::mqttbytes::{self, *};
+use crate::mqttbytes::{self, ConnectReturnCode, Disconnect, PingReq, PubAck, PubComp, PubRec};
+use crate::mqttbytes::{PubRel, Publish, QoS, Subscribe, Unsubscribe};
 use bytes::BytesMut;
 use std::collections::VecDeque;
 use std::{io, mem, time::Instant};
@@ -487,7 +487,6 @@ impl MqttState {
 #[cfg(test)]
 mod test {
     use super::{MqttState, StateError};
-    use crate::mqttbytes::v4::*;
     use crate::mqttbytes::*;
     use crate::{Event, Incoming, MqttOptions, Outgoing, Request};
 

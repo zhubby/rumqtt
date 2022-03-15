@@ -3,9 +3,10 @@ use core::fmt::{self, Display, Formatter};
 use std::slice::Iter;
 
 mod topic;
-pub mod v4;
+mod v4;
 
 pub use topic::*;
+pub use v4::*;
 
 /// Error during serialization and deserialization
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

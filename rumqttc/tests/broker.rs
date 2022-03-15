@@ -1,5 +1,3 @@
-use rumqttc::mqttbytes::v4::*;
-use rumqttc::mqttbytes::*;
 use std::collections::VecDeque;
 use std::io;
 use std::time::Duration;
@@ -9,7 +7,8 @@ use tokio::{task, time};
 
 use async_channel::{bounded, Receiver, Sender};
 use bytes::BytesMut;
-use rumqttc::mqttbytes::v4::Packet;
+use rumqttc::mqttbytes::{self, read, ConnAck, ConnectReturnCode, Disconnect, Packet, PingReq};
+use rumqttc::mqttbytes::{PingResp, PubAck, Publish, QoS};
 use rumqttc::{Event, Incoming, Outgoing};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
@@ -239,9 +238,9 @@ impl Network {
                     }
                 }
                 // If some packets are already framed, return those
-                Err(Error::InsufficientBytes(_)) if count > 0 => return Ok(()),
+                Err(mqttbytes::Error::InsufficientBytes(_)) if count > 0 => return Ok(()),
                 // Wait for more bytes until a frame can be created
-                Err(Error::InsufficientBytes(required)) => {
+                Err(mqttbytes::Error::InsufficientBytes(required)) => {
                     self.read_bytes(required).await?;
                 }
                 Err(e) => return Err(io::Error::new(io::ErrorKind::InvalidData, e.to_string())),
@@ -250,7 +249,7 @@ impl Network {
     }
 
     #[inline]
-    async fn write(&mut self, packet: Packet) -> Result<Outgoing, Error> {
+    async fn write(&mut self, packet: Packet) -> Result<Outgoing, mqttbytes::Error> {
         let outgoing = outgoing(&packet);
         match packet {
             Packet::Publish(packet) => packet.write(&mut self.write)?,

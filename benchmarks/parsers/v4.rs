@@ -1,6 +1,5 @@
 use bytes::{Buf, BytesMut};
-use rumqttc::mqttbytes::v4;
-use rumqttc::mqttbytes::QoS;
+use rumqttc::mqttbytes::{read, Publish, QoS};
 use std::time::Instant;
 
 mod common;
@@ -35,7 +34,7 @@ fn main() {
     let start = Instant::now();
     let mut packets = Vec::with_capacity(count);
     while output.has_remaining() {
-        let packet = v4::read(&mut output, 10 * 1024).unwrap();
+        let packet = read(&mut output, 10 * 1024).unwrap();
         packets.push(packet);
     }
 
@@ -58,10 +57,10 @@ fn main() {
     common::profile("bench.pb", guard);
 }
 
-fn generate_data(count: usize, payload_size: usize) -> Vec<v4::Publish> {
+fn generate_data(count: usize, payload_size: usize) -> Vec<Publish> {
     let mut data = Vec::with_capacity(count);
     for i in 0..count {
-        let mut publish = v4::Publish::new("hello/world", QoS::AtLeastOnce, vec![1; payload_size]);
+        let mut publish = Publish::new("hello/world", QoS::AtLeastOnce, vec![1; payload_size]);
         publish.pkid = (i % 100 + 1) as u16;
         data.push(publish);
     }

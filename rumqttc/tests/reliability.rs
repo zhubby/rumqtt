@@ -6,7 +6,7 @@ mod broker;
 
 use broker::*;
 use rumqttc::async_channel::Sender;
-use rumqttc::mqttbytes::v4::{ConnAck, ConnectReturnCode, Packet, Publish};
+use rumqttc::mqttbytes::{ConnAck, ConnectReturnCode, Packet, Publish};
 use rumqttc::{mqttbytes::QoS, ConnectionError, Event, EventLoop};
 use rumqttc::{Incoming, MqttOptions, Outgoing, Request, StateError};
 

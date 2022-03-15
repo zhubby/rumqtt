@@ -1,7 +1,7 @@
 use bytes::BytesMut;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-use crate::mqttbytes::{self, v4::*};
+use crate::mqttbytes::{self, read, Connect};
 use crate::{Incoming, MqttState, StateError};
 use std::io;
 
