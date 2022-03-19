@@ -31,8 +31,8 @@ use tokio_native_tls::TlsConnector as NativeTlsConnector;
 #[cfg(feature = "use-native-tls")]
 use tokio_native_tls::native_tls::Error as NativeTlsError;
 
-use std::net::AddrParseError;
 use std::io;
+use std::net::AddrParseError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -154,18 +154,18 @@ pub async fn tls_connect(
 
     let tls: Box<dyn N> = match tls_config {
         #[cfg(feature = "use-rustls")]
-        TlsConfiguration::Simple{ ca: _, alpn: _, client_auth: _, } | TlsConfiguration::Rustls(_) => {
+        TlsConfiguration::Simple { .. } | TlsConfiguration::Rustls(_) => {
             let connector = rustls_connector(tls_config).await?;
             let domain = ServerName::try_from(addr)?;
             Box::new(connector.connect(domain, tcp).await?)
-        },
+        }
         #[cfg(feature = "use-native-tls")]
         TlsConfiguration::Native => {
-            let connector: NativeTlsConnector = native_tls::TlsConnector::new().unwrap().into();
+            let connector: NativeTlsConnector = native_tls::TlsConnector::new()?.into();
             Box::new(connector.connect(addr, tcp).await?)
         }
         #[allow(unreachable_patterns)]
-        _ => panic!("Unknown or not enabled TLS backend configuration")
+        _ => panic!("Unknown or not enabled TLS backend configuration"),
     };
     Ok(tls)
 }

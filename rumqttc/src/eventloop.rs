@@ -1,6 +1,6 @@
-use crate::{framed::Network, Transport};
 #[cfg(any(feature = "use-rustls", feature = "use-native-tls"))]
 use crate::tls;
+use crate::{framed::Network, Transport};
 use crate::{Incoming, MqttState, Packet, Request, StateError};
 use crate::{MqttOptions, Outgoing};
 
@@ -303,7 +303,7 @@ async fn network_connect(options: &MqttOptions) -> Result<Network, ConnectionErr
 
             Network::new(WsStream::new(socket), options.max_incoming_packet_size)
         }
-        #[cfg(feature = "websocket")]
+        #[cfg(all(feature = "websocket", feature = "use-rustls"))]
         Transport::Wss(tls_config) => {
             let request = http::Request::builder()
                 .method(http::Method::GET)
@@ -312,7 +312,7 @@ async fn network_connect(options: &MqttOptions) -> Result<Network, ConnectionErr
                 .body(())
                 .unwrap();
 
-            let connector = tls::tls_connector(&tls_config).await?;
+            let connector = tls::rustls_connector(&tls_config).await?;
 
             let (socket, _) = connect_async_with_tls_connector(request, Some(connector)).await?;
 

@@ -257,7 +257,7 @@ impl Transport {
 
     /// Use secure websockets with tls as transport
     #[cfg(feature = "websocket")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "websocket")))]
+    #[cfg_attr(docsrs, doc(cfg(all(feature = "websocket", feature = "use-rustls"))))]
     pub fn wss(
         ca: Vec<u8>,
         client_auth: Option<(Vec<u8>, Key)>,
