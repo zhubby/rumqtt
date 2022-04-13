@@ -1,19 +1,6 @@
 use tokio::net::TcpStream;
 
 #[cfg(feature = "use-rustls")]
-use tokio_rustls::rustls;
-#[cfg(feature = "use-rustls")]
-use tokio_rustls::rustls::client::InvalidDnsNameError;
-#[cfg(feature = "use-rustls")]
-use tokio_rustls::rustls::{
-    Certificate, ClientConfig, OwnedTrustAnchor, PrivateKey, RootCertStore, ServerName,
-};
-#[cfg(feature = "use-rustls")]
-use tokio_rustls::webpki;
-#[cfg(feature = "use-rustls")]
-use tokio_rustls::TlsConnector as RustlsConnector;
-
-#[cfg(feature = "use-rustls")]
 use crate::Key;
 #[cfg(feature = "use-rustls")]
 use std::convert::TryFrom;
@@ -21,18 +8,29 @@ use std::convert::TryFrom;
 use std::io::{BufReader, Cursor};
 #[cfg(feature = "use-rustls")]
 use std::sync::Arc;
+#[cfg(feature = "use-rustls")]
+use tokio_rustls::rustls;
+#[cfg(feature = "use-rustls")]
+use tokio_rustls::rustls::{client::InvalidDnsNameError, ClientConfig};
+#[cfg(feature = "use-rustls")]
+use tokio_rustls::rustls::{Certificate, OwnedTrustAnchor, PrivateKey, RootCertStore, ServerName};
+#[cfg(feature = "use-rustls")]
+use tokio_rustls::webpki;
+#[cfg(feature = "use-rustls")]
+use tokio_rustls::TlsConnector as RustlsConnector;
+
+#[cfg(feature = "use-native-tls")]
+use std::{fs::File, io::Read};
+#[cfg(feature = "use-native-tls")]
+use tokio_native_tls::native_tls::Error as NativeTlsError;
+#[cfg(feature = "use-native-tls")]
+use tokio_native_tls::TlsConnector as NativeTlsConnector;
 
 use crate::framed::N;
 use crate::{MqttOptions, TlsConfiguration};
 
-#[cfg(feature = "use-native-tls")]
-use tokio_native_tls::TlsConnector as NativeTlsConnector;
-
-#[cfg(feature = "use-native-tls")]
-use tokio_native_tls::native_tls::Error as NativeTlsError;
-
+use std::io::{self};
 use std::net::AddrParseError;
-use std::io;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -54,6 +52,15 @@ pub enum Error {
     #[cfg(feature = "use-native-tls")]
     #[error("Native TLS error {0}")]
     NativeTls(#[from] NativeTlsError),
+    #[cfg(feature = "use-native-tls")]
+    #[error("Could not find cert at {0}")]
+    CertNotFound(String),
+    #[cfg(feature = "use-native-tls")]
+    #[error("Invalid pkcs12 certificate {0}")]
+    InvalidCert(String),
+    #[cfg(feature = "use-native-tls")]
+    #[error("Invalid pkcs12 password")]
+    InvalidPass,
 }
 
 // The cert handling functions return unit right now, this is a shortcut
@@ -154,18 +161,51 @@ pub async fn tls_connect(
 
     let tls: Box<dyn N> = match tls_config {
         #[cfg(feature = "use-rustls")]
-        TlsConfiguration::Simple{ ca: _, alpn: _, client_auth: _, } | TlsConfiguration::Rustls(_) => {
+        TlsConfiguration::Simple {
+            ca: _,
+            alpn: _,
+            client_auth: _,
+        }
+        | TlsConfiguration::Rustls(_) => {
             let connector = rustls_connector(tls_config).await?;
             let domain = ServerName::try_from(addr)?;
             Box::new(connector.connect(domain, tcp).await?)
-        },
+        }
         #[cfg(feature = "use-native-tls")]
         TlsConfiguration::Native => {
             let connector: NativeTlsConnector = native_tls::TlsConnector::new().unwrap().into();
             Box::new(connector.connect(addr, tcp).await?)
         }
+        #[cfg(feature = "use-native-tls")]
+        TlsConfiguration::CustomNativeTls {
+            pkcs12_path,
+            pkcs12_pass,
+        } => {
+            // Get certificates
+            let cert_file = File::open(&pkcs12_path);
+            let mut cert_file =
+                cert_file.map_err(|_| Error::CertNotFound(pkcs12_path.to_string()))?;
+
+            // Read cert into memory
+            let mut buf = Vec::new();
+            cert_file
+                .read_to_end(&mut buf)
+                .map_err(|_| Error::InvalidCert(pkcs12_path.to_string()))?;
+
+            // Get the identity
+            let identity = native_tls::Identity::from_pkcs12(&buf, pkcs12_pass)
+                .map_err(|_| Error::InvalidPass)?;
+
+            // Build a connector with given identity
+            let connector: NativeTlsConnector = native_tls::TlsConnector::builder()
+                .identity(identity)
+                .build()
+                .unwrap()
+                .into();
+            Box::new(connector.connect(addr, tcp).await?)
+        }
         #[allow(unreachable_patterns)]
-        _ => panic!("Unknown or not enabled TLS backend configuration")
+        _ => panic!("Unknown or not enabled TLS backend configuration"),
     };
     Ok(tls)
 }

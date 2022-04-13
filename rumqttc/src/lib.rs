@@ -222,7 +222,6 @@ impl Transport {
         Self::Tcp
     }
 
-    #[cfg(feature = "use-rustls")]
     /// Use secure tcp with tls as transport
     #[cfg(feature = "use-rustls")]
     pub fn tls(
@@ -297,6 +296,11 @@ pub enum TlsConfiguration {
     Rustls(Arc<ClientConfig>),
     #[cfg(feature = "use-native-tls")]
     Native,
+    #[cfg(feature = "use-native-tls")]
+    CustomNativeTls {
+        pkcs12_path: String,
+        pkcs12_pass: String,
+    }
 }
 
 #[cfg(feature = "use-rustls")]
