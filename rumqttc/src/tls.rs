@@ -70,9 +70,43 @@ impl From<()> for Error {
     }
 }
 
+#[cfg(feature = "use-native-tls")]
+fn native_tls_connector(tls_config: &TlsConfiguration) -> Result<NativeTlsConnector, Error> {
+    match tls_config {
+        &TlsConfiguration::Native => Ok(native_tls::TlsConnector::new()?.into()),
+        &TlsConfiguration::CustomNativeTls {
+            pkcs12_path,
+            pkcs12_pass,
+        } => {
+            // Get certificates
+            let cert_file = File::open(&pkcs12_path);
+            let mut cert_file =
+                cert_file.map_err(|_| Error::CertNotFound(pkcs12_path.to_string()))?;
+
+            // Read cert into memory
+            let mut buf = Vec::new();
+            cert_file
+                .read_to_end(&mut buf)
+                .map_err(|_| Error::InvalidCert(pkcs12_path.to_string()))?;
+
+            // Get the identity
+            let identity = native_tls::Identity::from_pkcs12(&buf, &pkcs12_pass)
+                .map_err(|_| Error::InvalidPass)?;
+
+            // Build a connector with given identity
+            Ok(native_tls::TlsConnector::builder()
+                .identity(identity)
+                .build()?
+                .into())
+        }
+        #[allow(unreachable_patterns)]
+        _ => unreachable!("This function cannot be called for other TLS backends than native-tls"),
+    }
+}
+
 #[cfg(feature = "use-rustls")]
-pub async fn rustls_connector(tls_config: &TlsConfiguration) -> Result<RustlsConnector, Error> {
-    let config = match tls_config {
+fn rustls_connector(tls_config: &TlsConfiguration) -> Result<RustlsConnector, Error> {
+    match tls_config {
         TlsConfiguration::Simple {
             ca,
             alpn,
@@ -141,14 +175,14 @@ pub async fn rustls_connector(tls_config: &TlsConfiguration) -> Result<RustlsCon
                 config.alpn_protocols.extend_from_slice(alpn);
             }
 
-            Arc::new(config)
+            Ok(RustlsConnector::from(Arc::new(config)))
         }
-        TlsConfiguration::Rustls(tls_client_config) => tls_client_config.clone(),
+        TlsConfiguration::Rustls(tls_client_config) => {
+            Ok(RustlsConnector::from(*tls_client_config))
+        }
         #[allow(unreachable_patterns)]
-        _ => unreachable!("This cannot be called for other TLS backends than Rustls"),
-    };
-
-    Ok(RustlsConnector::from(config))
+        _ => unreachable!("This function cannot be called for other TLS backends than Rustls"),
+    }
 }
 
 pub async fn tls_connect(
@@ -161,47 +195,14 @@ pub async fn tls_connect(
 
     let tls: Box<dyn N> = match tls_config {
         #[cfg(feature = "use-rustls")]
-        TlsConfiguration::Simple {
-            ca: _,
-            alpn: _,
-            client_auth: _,
-        }
-        | TlsConfiguration::Rustls(_) => {
-            let connector = rustls_connector(tls_config).await?;
+        TlsConfiguration::Simple { .. } | TlsConfiguration::Rustls(_) => {
+            let connector = rustls_connector(tls_config)?;
             let domain = ServerName::try_from(addr)?;
             Box::new(connector.connect(domain, tcp).await?)
         }
         #[cfg(feature = "use-native-tls")]
-        TlsConfiguration::Native => {
-            let connector: NativeTlsConnector = native_tls::TlsConnector::new().unwrap().into();
-            Box::new(connector.connect(addr, tcp).await?)
-        }
-        #[cfg(feature = "use-native-tls")]
-        TlsConfiguration::CustomNativeTls {
-            pkcs12_path,
-            pkcs12_pass,
-        } => {
-            // Get certificates
-            let cert_file = File::open(&pkcs12_path);
-            let mut cert_file =
-                cert_file.map_err(|_| Error::CertNotFound(pkcs12_path.to_string()))?;
-
-            // Read cert into memory
-            let mut buf = Vec::new();
-            cert_file
-                .read_to_end(&mut buf)
-                .map_err(|_| Error::InvalidCert(pkcs12_path.to_string()))?;
-
-            // Get the identity
-            let identity = native_tls::Identity::from_pkcs12(&buf, pkcs12_pass)
-                .map_err(|_| Error::InvalidPass)?;
-
-            // Build a connector with given identity
-            let connector: NativeTlsConnector = native_tls::TlsConnector::builder()
-                .identity(identity)
-                .build()
-                .unwrap()
-                .into();
+        TlsConfiguration::CustomNativeTls { .. } | TlsConfiguration::Native => {
+            let connector: NativeTlsConnector = native_tls_connector(tls_config)?;
             Box::new(connector.connect(addr, tcp).await?)
         }
         #[allow(unreachable_patterns)]
