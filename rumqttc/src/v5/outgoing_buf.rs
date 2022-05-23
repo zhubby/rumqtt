@@ -1,7 +1,6 @@
-use std::{
-    collections::VecDeque,
-    sync::{Arc, Mutex},
-};
+use std::{collections::VecDeque, sync::Arc};
+
+use tokio::sync::Mutex;
 
 use crate::v5::Request;
 

@@ -76,7 +76,7 @@ impl Network {
         loop {
             match read(&mut self.read, self.max_incoming_size) {
                 Ok(packet) => {
-                    state.handle_incoming_packet(packet)?;
+                    state.handle_incoming_packet(packet).await?;
 
                     count += 1;
                     if count >= self.max_readb_count {

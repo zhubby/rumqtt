@@ -1,8 +1,6 @@
-use std::{
-    collections::VecDeque,
-    mem,
-    sync::{Arc, Mutex},
-};
+use std::{collections::VecDeque, mem, sync::Arc};
+
+use tokio::sync::Mutex;
 
 use crate::v5::Incoming;
 
@@ -37,10 +35,10 @@ impl Iterator for Notifier {
     fn next(&mut self) -> Option<Incoming> {
         match self.incoming_buf_cache.pop_front() {
             None => {
-                mem::swap(
-                    &mut self.incoming_buf_cache,
-                    &mut *self.incoming_buf.lock().unwrap(),
-                );
+                let mut incoming_buf = tokio::runtime::Runtime::new()
+                    .unwrap()
+                    .block_on(self.incoming_buf.lock());
+                mem::swap(&mut self.incoming_buf_cache, &mut *incoming_buf);
                 self.incoming_buf_cache.pop_front()
             }
             val => val,

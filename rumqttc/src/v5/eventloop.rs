@@ -11,21 +11,14 @@ use flume::{bounded, Receiver, Sender};
 use tokio::net::TcpStream;
 #[cfg(unix)]
 use tokio::net::UnixStream;
-use tokio::select;
 use tokio::time::{self, error::Elapsed, Instant, Sleep};
+use tokio::{select, sync::Mutex};
 #[cfg(feature = "websocket")]
 use ws_stream_tungstenite::WsStream;
 
 #[cfg(unix)]
 use std::path::Path;
-use std::{
-    collections::VecDeque,
-    io,
-    pin::Pin,
-    sync::{Arc, Mutex},
-    time::Duration,
-    vec::IntoIter,
-};
+use std::{collections::VecDeque, io, pin::Pin, sync::Arc, time::Duration, vec::IntoIter};
 
 /// Critical errors during eventloop polling
 #[derive(Debug, thiserror::Error)]
@@ -181,7 +174,7 @@ impl EventLoop {
                 o = self.incoming_rx.recv_async(), if !inflight_full && !pending && !collision => match o {
                     Ok(_request_notif) => {
                         // swapping to avoid blocking the mutex
-                        std::mem::swap(&mut self.outgoing_buf_cache, &mut self.outgoing_buf.lock().unwrap().buf);
+                        std::mem::swap(&mut self.outgoing_buf_cache, &mut self.outgoing_buf.lock().await.buf);
                         if self.outgoing_buf_cache.is_empty() {
                             continue;
                         }

@@ -43,7 +43,9 @@ impl Client {
         let mut publish = Publish::new(topic, qos, payload);
         publish.retain = retain;
         let pkid = if qos != QoS::AtMostOnce {
-            let mut request_buf = self.client.outgoing_buf.lock().unwrap();
+            let mut request_buf = tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(self.client.outgoing_buf.lock());
             if request_buf.buf.len() == request_buf.capacity {
                 return Err(ClientError::RequestsFull);
             }
@@ -75,7 +77,9 @@ impl Client {
     /// Sends a MQTT PubAck to the eventloop. Only needed in if `manual_acks` flag is set.
     pub fn ack(&self, publish: &Publish) -> Result<(), ClientError> {
         if let Some(ack) = get_ack_req(publish.qos, publish.pkid) {
-            let mut request_buf = self.client.outgoing_buf.lock().unwrap();
+            let mut request_buf = tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(self.client.outgoing_buf.lock());
             if request_buf.buf.len() == request_buf.capacity {
                 return Err(ClientError::RequestsFull);
             }
@@ -94,7 +98,9 @@ impl Client {
     pub fn subscribe<S: Into<String>>(&self, topic: S, qos: QoS) -> Result<u16, ClientError> {
         let mut subscribe = Subscribe::new(topic.into(), qos);
         let pkid = if qos != QoS::AtMostOnce {
-            let mut request_buf = self.client.outgoing_buf.lock().unwrap();
+            let mut request_buf = tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(self.client.outgoing_buf.lock());
             if request_buf.buf.len() == request_buf.capacity {
                 return Err(ClientError::RequestsFull);
             }
@@ -115,13 +121,13 @@ impl Client {
     }
 
     /// Sends a MQTT Subscribe for multiple topics to the eventloop
-    pub fn subscribe_many<T>(&self, topics: T) -> Result<u16, ClientError>
+    pub async fn subscribe_many<T>(&self, topics: T) -> Result<u16, ClientError>
     where
         T: IntoIterator<Item = SubscribeFilter>,
     {
         let mut subscribe = Subscribe::new_many(topics)?;
         let pkid = {
-            let mut request_buf = self.client.outgoing_buf.lock().unwrap();
+            let mut request_buf = self.client.outgoing_buf.lock().await;
             if request_buf.buf.len() == request_buf.capacity {
                 return Err(ClientError::RequestsFull);
             }
@@ -145,7 +151,9 @@ impl Client {
     pub fn unsubscribe<S: Into<String>>(&self, topic: S) -> Result<u16, ClientError> {
         let mut unsubscribe = Unsubscribe::new(topic.into());
         let pkid = {
-            let mut request_buf = self.client.outgoing_buf.lock().unwrap();
+            let mut request_buf = tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(self.client.outgoing_buf.lock());
             if request_buf.buf.len() == request_buf.capacity {
                 return Err(ClientError::RequestsFull);
             }
@@ -165,7 +173,9 @@ impl Client {
 
     /// Sends a MQTT disconnect to the eventloop
     pub fn disconnect(&self) -> Result<(), ClientError> {
-        let mut request_buf = self.client.outgoing_buf.lock().unwrap();
+        let mut request_buf = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(self.client.outgoing_buf.lock());
         if request_buf.buf.len() == request_buf.capacity {
             return Err(ClientError::RequestsFull);
         }

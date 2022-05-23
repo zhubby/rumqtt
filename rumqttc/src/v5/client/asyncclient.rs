@@ -1,7 +1,8 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use bytes::Bytes;
 use flume::{SendError, Sender, TrySendError};
+use tokio::sync::Mutex;
 
 use crate::v5::{
     client::get_ack_req,
@@ -48,7 +49,7 @@ impl AsyncClient {
         let mut publish = Publish::new(topic, qos, payload);
         publish.retain = retain;
         let pkid = if qos != QoS::AtMostOnce {
-            let mut request_buf = self.outgoing_buf.lock().unwrap();
+            let mut request_buf = self.outgoing_buf.lock().await;
             if request_buf.buf.len() == request_buf.capacity {
                 return Err(ClientError::RequestsFull);
             }
@@ -78,7 +79,9 @@ impl AsyncClient {
         let mut publish = Publish::new(topic, qos, payload);
         publish.retain = retain;
         let pkid = if qos != QoS::AtMostOnce {
-            let mut request_buf = self.outgoing_buf.lock().unwrap();
+            let mut request_buf = tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(self.outgoing_buf.lock());
             if request_buf.buf.len() == request_buf.capacity {
                 return Err(ClientError::RequestsFull);
             }
@@ -97,7 +100,7 @@ impl AsyncClient {
     pub async fn ack(&self, publish: &Publish) -> Result<(), ClientError> {
         if let Some(ack) = get_ack_req(publish.qos, publish.pkid) {
             {
-                let mut request_buf = self.outgoing_buf.lock().unwrap();
+                let mut request_buf = self.outgoing_buf.lock().await;
                 if request_buf.buf.len() == request_buf.capacity {
                     return Err(ClientError::RequestsFull);
                 }
@@ -111,7 +114,9 @@ impl AsyncClient {
     /// Sends a MQTT PubAck to the eventloop. Only needed in if `manual_acks` flag is set.
     pub fn try_ack(&self, publish: &Publish) -> Result<(), ClientError> {
         if let Some(ack) = get_ack_req(publish.qos, publish.pkid) {
-            let mut request_buf = self.outgoing_buf.lock().unwrap();
+            let mut request_buf = tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(self.outgoing_buf.lock());
             if request_buf.buf.len() == request_buf.capacity {
                 return Err(ClientError::RequestsFull);
             }
@@ -135,7 +140,7 @@ impl AsyncClient {
         let mut publish = Publish::from_bytes(topic, qos, payload);
         publish.retain = retain;
         let pkid = if qos != QoS::AtMostOnce {
-            let mut request_buf = self.outgoing_buf.lock().unwrap();
+            let mut request_buf = self.outgoing_buf.lock().await;
             if request_buf.buf.len() == request_buf.capacity {
                 return Err(ClientError::RequestsFull);
             }
@@ -154,7 +159,7 @@ impl AsyncClient {
     pub async fn subscribe<S: Into<String>>(&self, topic: S, qos: QoS) -> Result<u16, ClientError> {
         let mut subscribe = Subscribe::new(topic.into(), qos);
         let pkid = {
-            let mut request_buf = self.outgoing_buf.lock().unwrap();
+            let mut request_buf = self.outgoing_buf.lock().await;
             if request_buf.buf.len() == request_buf.capacity {
                 return Err(ClientError::RequestsFull);
             }
@@ -171,7 +176,9 @@ impl AsyncClient {
     pub fn try_subscribe<S: Into<String>>(&self, topic: S, qos: QoS) -> Result<u16, ClientError> {
         let mut subscribe = Subscribe::new(topic.into(), qos);
         let pkid = {
-            let mut request_buf = self.outgoing_buf.lock().unwrap();
+            let mut request_buf = tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(self.outgoing_buf.lock());
             if request_buf.buf.len() == request_buf.capacity {
                 return Err(ClientError::RequestsFull);
             }
@@ -191,7 +198,7 @@ impl AsyncClient {
     {
         let mut subscribe = Subscribe::new_many(topics)?;
         let pkid = {
-            let mut request_buf = self.outgoing_buf.lock().unwrap();
+            let mut request_buf = self.outgoing_buf.lock().await;
             if request_buf.buf.len() == request_buf.capacity {
                 return Err(ClientError::RequestsFull);
             }
@@ -211,7 +218,9 @@ impl AsyncClient {
     {
         let mut subscribe = Subscribe::new_many(topics)?;
         let pkid = {
-            let mut request_buf = self.outgoing_buf.lock().unwrap();
+            let mut request_buf = tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(self.outgoing_buf.lock());
             if request_buf.buf.len() == request_buf.capacity {
                 return Err(ClientError::RequestsFull);
             }
@@ -228,7 +237,7 @@ impl AsyncClient {
     pub async fn unsubscribe<S: Into<String>>(&self, topic: S) -> Result<u16, ClientError> {
         let mut unsubscribe = Unsubscribe::new(topic.into());
         let pkid = {
-            let mut request_buf = self.outgoing_buf.lock().unwrap();
+            let mut request_buf = self.outgoing_buf.lock().await;
             if request_buf.buf.len() == request_buf.capacity {
                 return Err(ClientError::RequestsFull);
             }
@@ -245,7 +254,9 @@ impl AsyncClient {
     pub fn try_unsubscribe<S: Into<String>>(&self, topic: S) -> Result<u16, ClientError> {
         let mut unsubscribe = Unsubscribe::new(topic.into());
         let pkid = {
-            let mut request_buf = self.outgoing_buf.lock().unwrap();
+            let mut request_buf = tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(self.outgoing_buf.lock());
             if request_buf.buf.len() == request_buf.capacity {
                 return Err(ClientError::RequestsFull);
             }
@@ -262,7 +273,7 @@ impl AsyncClient {
     #[inline]
     pub async fn disconnect(&self) -> Result<(), ClientError> {
         {
-            let mut request_buf = self.outgoing_buf.lock().unwrap();
+            let mut request_buf = self.outgoing_buf.lock().await;
             if request_buf.buf.len() == request_buf.capacity {
                 return Err(ClientError::RequestsFull);
             }
@@ -274,7 +285,9 @@ impl AsyncClient {
     /// Sends a MQTT disconnect to the eventloop
     #[inline]
     pub fn try_disconnect(&self) -> Result<(), ClientError> {
-        let mut request_buf = self.outgoing_buf.lock().unwrap();
+        let mut request_buf = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(self.outgoing_buf.lock());
         if request_buf.buf.len() == request_buf.capacity {
             return Err(ClientError::RequestsFull);
         }

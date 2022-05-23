@@ -1,11 +1,7 @@
-use std::{
-    collections::VecDeque,
-    io, mem,
-    sync::{Arc, Mutex},
-    time::Instant,
-};
+use std::{collections::VecDeque, io, mem, sync::Arc, time::Instant};
 
 use bytes::BytesMut;
+use tokio::sync::Mutex;
 
 use crate::v5::{outgoing_buf::OutgoingBuf, packet::*, Incoming, Request};
 
@@ -138,8 +134,8 @@ impl MqttState {
     }
 
     #[inline]
-    pub fn cur_pkid(&self) -> u16 {
-        self.outgoing_buf.lock().unwrap().pkid_counter
+    pub async fn cur_pkid(&self) -> u16 {
+        self.outgoing_buf.lock().await.pkid_counter
     }
 
     /// Consolidates handling of all outgoing mqtt packet logic. Returns a packet which should
@@ -165,7 +161,7 @@ impl MqttState {
     /// user to consume and `Packet` which for the eventloop to put on the network
     /// E.g For incoming QoS1 publish packet, this method returns (Publish, Puback). Publish packet will
     /// be forwarded to user and Pubck packet will be written to network
-    pub fn handle_incoming_packet(&mut self, packet: Incoming) -> Result<(), StateError> {
+    pub async fn handle_incoming_packet(&mut self, packet: Incoming) -> Result<(), StateError> {
         let out = match &packet {
             Incoming::PingResp => self.handle_incoming_pingresp(),
             Incoming::Publish(publish) => self.handle_incoming_publish(publish),
@@ -182,7 +178,7 @@ impl MqttState {
         };
 
         out?;
-        self.incoming_buf.lock().unwrap().push_back(packet);
+        self.incoming_buf.lock().await.push_back(packet);
         self.last_incoming = Instant::now();
         Ok(())
     }
@@ -436,8 +432,8 @@ impl MqttState {
     }
 
     #[inline]
-    pub fn increment_pkid(&self) -> u16 {
-        self.outgoing_buf.lock().unwrap().increment_pkid()
+    pub async fn increment_pkid(&self) -> u16 {
+        self.outgoing_buf.lock().await.increment_pkid()
     }
 
     ///// http://stackoverflow.com/questions/11115364/mqtt-messageid-practical-implementation
@@ -488,12 +484,12 @@ mod test {
         MqttState::new(100, false, 100)
     }
 
-    #[test]
-    fn next_pkid_increments_as_expected() {
+    #[tokio::test]
+    async fn next_pkid_increments_as_expected() {
         let mqtt = build_mqttstate();
 
         for i in 1..=100 {
-            let pkid = mqtt.increment_pkid();
+            let pkid = mqtt.increment_pkid().await;
 
             // loops between 0-99. % 100 == 0 implies border
             let expected = i % 100;
@@ -505,8 +501,8 @@ mod test {
         }
     }
 
-    #[test]
-    fn outgoing_publish_should_set_pkid_and_add_publish_to_queue() {
+    #[tokio::test]
+    async fn outgoing_publish_should_set_pkid_and_add_publish_to_queue() {
         let mut mqtt = build_mqttstate();
 
         // QoS0 Publish
@@ -515,7 +511,7 @@ mod test {
 
         // QoS 0 publish shouldn't be saved in queue
         mqtt.outgoing_publish(publish).unwrap();
-        assert_eq!(mqtt.cur_pkid(), 0);
+        assert_eq!(mqtt.cur_pkid().await, 0);
         assert_eq!(mqtt.inflight, 0);
 
         // QoS1 Publish
@@ -525,14 +521,14 @@ mod test {
         // Packet id should be set and publish should be saved in queue
         mqtt.outgoing_publish(publish.clone()).unwrap();
         // cur_pkid == 0 as there is no client to update it
-        assert_eq!(mqtt.cur_pkid(), 0);
+        assert_eq!(mqtt.cur_pkid().await, 0);
         assert_eq!(mqtt.inflight, 1);
 
         // Packet id should be incremented and publish should be saved in queue
         publish.pkid = 3;
         mqtt.outgoing_publish(publish).unwrap();
         // cur_pkid == 0 as there is no client to update it
-        assert_eq!(mqtt.cur_pkid(), 0);
+        assert_eq!(mqtt.cur_pkid().await, 0);
         assert_eq!(mqtt.inflight, 2);
 
         // QoS1 Publish
@@ -542,14 +538,14 @@ mod test {
         // Packet id should be set and publish should be saved in queue
         mqtt.outgoing_publish(publish.clone()).unwrap();
         // cur_pkid == 0 as there is no client to update it
-        assert_eq!(mqtt.cur_pkid(), 0);
+        assert_eq!(mqtt.cur_pkid().await, 0);
         assert_eq!(mqtt.inflight, 3);
 
         publish.pkid = 5;
         // Packet id should be incremented and publish should be saved in queue
         mqtt.outgoing_publish(publish).unwrap();
         // cur_pkid == 0 as there is no client to update it
-        assert_eq!(mqtt.cur_pkid(), 0);
+        assert_eq!(mqtt.cur_pkid().await, 0);
         assert_eq!(mqtt.inflight, 4);
     }
 
@@ -586,8 +582,8 @@ mod test {
         mqtt.handle_incoming_publish(&publish3).unwrap();
     }
 
-    #[test]
-    fn incoming_publish_should_not_be_acked_with_manual_acks() {
+    #[tokio::test]
+    async fn incoming_publish_should_not_be_acked_with_manual_acks() {
         let mut mqtt = build_mqttstate();
         mqtt.manual_acks = true;
 
@@ -603,7 +599,7 @@ mod test {
         let pkid = mqtt.incoming_pub[3].unwrap();
         assert_eq!(pkid, 3);
 
-        assert!(mqtt.incoming_buf.lock().unwrap().is_empty());
+        assert!(mqtt.incoming_buf.lock().await.is_empty());
     }
 
     #[test]
@@ -719,8 +715,8 @@ mod test {
         assert_eq!(mqtt.inflight, 0);
     }
 
-    #[test]
-    fn outgoing_ping_handle_should_throw_errors_for_no_pingresp() {
+    #[tokio::test]
+    async fn outgoing_ping_handle_should_throw_errors_for_no_pingresp() {
         let mut mqtt = build_mqttstate();
         let mut opts = MqttOptions::new("test", "localhost", 1883);
         opts.set_keep_alive(std::time::Duration::from_secs(10));
@@ -732,6 +728,7 @@ mod test {
         mqtt.handle_outgoing_packet(Request::Publish(publish))
             .unwrap();
         mqtt.handle_incoming_packet(Incoming::PubAck(PubAck::new(1)))
+            .await
             .unwrap();
 
         // should throw error because we didn't get pingresp for previous ping
@@ -742,8 +739,8 @@ mod test {
         }
     }
 
-    #[test]
-    fn outgoing_ping_handle_should_succeed_if_pingresp_is_received() {
+    #[tokio::test]
+    async fn outgoing_ping_handle_should_succeed_if_pingresp_is_received() {
         let mut mqtt = build_mqttstate();
 
         let mut opts = MqttOptions::new("test", "localhost", 1883);
@@ -751,7 +748,9 @@ mod test {
 
         // should ping
         mqtt.outgoing_ping().unwrap();
-        mqtt.handle_incoming_packet(Incoming::PingResp).unwrap();
+        mqtt.handle_incoming_packet(Incoming::PingResp)
+            .await
+            .unwrap();
 
         // should ping
         mqtt.outgoing_ping().unwrap();
