@@ -365,9 +365,7 @@ impl MqttOptions {
     /// ```
     pub fn new<S: Into<String>, T: Into<String>>(id: S, host: T, port: u16) -> MqttOptions {
         let id = id.into();
-        if id.starts_with(' ') || id.is_empty() {
-            panic!("Invalid client id");
-        }
+        assert!(!(id.starts_with(' ') || id.is_empty()), "Invalid client id");
 
         MqttOptions {
             broker_addr: host.into(),
