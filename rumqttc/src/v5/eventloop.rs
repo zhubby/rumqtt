@@ -35,7 +35,7 @@ pub enum ConnectionError {
     #[error("Timeout")]
     Timeout(#[from] Elapsed),
     #[error("Packet parsing error: {0}")]
-    Mqtt5Bytes(Error),
+    MqttBytes(#[from] crate::mqttbytes::Error),
     #[cfg(feature = "use-rustls")]
     #[error("Network: {0}")]
     Network(#[from] tls::Error),

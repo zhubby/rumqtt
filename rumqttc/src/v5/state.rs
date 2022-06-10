@@ -33,7 +33,7 @@ pub enum StateError {
     #[error("Timeout while waiting to resolve collision")]
     CollisionTimeout,
     #[error("Mqtt serialization/deserialization error")]
-    Deserialization(#[from] Error),
+    Deserialization(#[from] crate::mqttbytes::Error),
 }
 
 /// State of the mqtt connection.

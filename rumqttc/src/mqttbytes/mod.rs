@@ -33,6 +33,8 @@ pub enum Error {
     InvalidPropertyType(u8),
     #[error("Invalid QoS level: {0}")]
     InvalidQoS(u8),
+    #[error("Invalid retain forward rule: {0}")]
+    InvalidRetainForwardRule(u8),
     #[error("Invalid subscribe reason code: {0}")]
     InvalidSubscribeReasonCode(u8),
     #[error("Packet id Zero")]

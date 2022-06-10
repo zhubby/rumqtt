@@ -1,8 +1,10 @@
 use bytes::BytesMut;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-use crate::v5::{packet::*, Incoming, MqttState, StateError};
 use std::io;
+
+use crate::mqttbytes::Error;
+use crate::v5::{packet::*, Incoming, MqttState, StateError};
 
 /// Network transforms packets <-> frames efficiently. It takes
 /// advantage of pre-allocation, buffering and vectorization when
