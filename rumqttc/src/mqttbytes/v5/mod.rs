@@ -2,7 +2,7 @@ use std::slice::Iter;
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
-use crate::mqttbytes::Error;
+use super::Error;
 
 mod connack;
 mod connect;

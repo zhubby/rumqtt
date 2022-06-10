@@ -9,6 +9,7 @@ use std::slice::Iter;
 
 mod topic;
 pub mod v4;
+pub mod v5;
 
 pub use topic::*;
 
