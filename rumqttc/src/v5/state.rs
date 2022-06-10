@@ -33,13 +33,7 @@ pub enum StateError {
     #[error("Timeout while waiting to resolve collision")]
     CollisionTimeout,
     #[error("Mqtt serialization/deserialization error")]
-    Deserialization(Error),
-}
-
-impl From<Error> for StateError {
-    fn from(e: Error) -> StateError {
-        StateError::Deserialization(e)
-    }
+    Deserialization(#[from] Error),
 }
 
 /// State of the mqtt connection.
