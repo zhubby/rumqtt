@@ -1,6 +1,7 @@
 //! This module offers a high level synchronous and asynchronous abstraction to
 //! async eventloop.
 use crate::v5::{packet::*, ConnectionError, EventLoop, Request};
+use crate::QoS;
 
 use flume::SendError;
 use std::mem;

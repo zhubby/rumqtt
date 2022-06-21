@@ -7,8 +7,9 @@ use crate::v5::{
     client::get_ack_req,
     outgoing_buf::OutgoingBuf,
     packet::{Publish, Subscribe, SubscribeFilter, Unsubscribe},
-    ClientError, EventLoop, MqttOptions, QoS, Request,
+    ClientError, EventLoop, MqttOptions, Request,
 };
+use crate::QoS;
 
 /// `AsyncClient` to communicate with MQTT `Eventloop`
 /// This is cloneable and can be used to asynchronously Publish, Subscribe.

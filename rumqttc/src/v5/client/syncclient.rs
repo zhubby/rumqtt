@@ -3,8 +3,9 @@ use tokio::runtime;
 use crate::v5::{
     client::get_ack_req,
     packet::{Publish, Subscribe, SubscribeFilter, Unsubscribe},
-    AsyncClient, ClientError, Connection, MqttOptions, QoS, Request,
+    AsyncClient, ClientError, Connection, MqttOptions, Request,
 };
+use crate::QoS;
 
 /// `Client` to communicate with MQTT eventloop `Connection`.
 ///

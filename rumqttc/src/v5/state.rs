@@ -7,7 +7,8 @@ use std::{
 
 use bytes::BytesMut;
 
-use crate::v5::{outgoing_buf::OutgoingBuf, packet::*, Incoming, Request};
+use crate::mqttbytes::{v5::*, QoS};
+use crate::v5::{outgoing_buf::OutgoingBuf, Incoming, Request};
 
 /// Errors during state handling
 #[derive(Debug, thiserror::Error)]
@@ -456,8 +457,8 @@ impl MqttState {
 
 #[cfg(test)]
 mod test {
-    use super::{MqttState, StateError};
-    use crate::v5::{packet::*, Incoming, MqttOptions, Request};
+    use super::*;
+    use crate::v5::MqttOptions;
 
     fn build_outgoing_publish(qos: QoS) -> Publish {
         let topic = "hello/world".to_owned();

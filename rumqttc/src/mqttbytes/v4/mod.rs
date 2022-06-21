@@ -3,7 +3,6 @@ use super::*;
 mod connack;
 mod connect;
 mod disconnect;
-mod ping;
 mod puback;
 mod pubcomp;
 mod publish;

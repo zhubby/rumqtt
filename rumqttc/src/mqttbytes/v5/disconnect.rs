@@ -4,8 +4,6 @@ use bytes::{BufMut, Bytes, BytesMut};
 
 use super::*;
 
-use super::{property, PropertyType};
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(u8)]
 pub enum DisconnectReasonCode {

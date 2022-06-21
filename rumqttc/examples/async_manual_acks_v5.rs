@@ -1,7 +1,8 @@
 #![allow(dead_code, unused_imports)]
+use rumqttc::v5::{AsyncClient, EventLoop, MqttOptions};
+use rumqttc::QoS;
 use tokio::{task, time};
 
-use rumqttc::v5::{AsyncClient, EventLoop, MqttOptions, QoS};
 use std::error::Error;
 use std::time::Duration;
 
