@@ -307,7 +307,7 @@ impl From<ClientConfig> for TlsConfiguration {
 // are wrong (e.g empty client id) or aggressive (keep alive time)
 /// Options to configure the behaviour of mqtt connection
 #[derive(Clone)]
-pub struct MqttOptions {
+pub struct MqttOptions<L> {
     /// broker address that you want to connect to
     broker_addr: String,
     /// broker port
@@ -339,7 +339,7 @@ pub struct MqttOptions {
     /// maximum number of outgoing inflight messages
     inflight: u16,
     /// Last will that will be issued on unexpected disconnect
-    last_will: Option<LastWill>,
+    last_will: Option<L>,
     /// Connection timeout
     conn_timeout: u64,
     /// If set to `true` MQTT acknowledgements are not sent automatically.
@@ -347,7 +347,7 @@ pub struct MqttOptions {
     manual_acks: bool,
 }
 
-impl MqttOptions {
+impl<L: Clone> MqttOptions<L> {
     /// Create an [`MqttOptions`] object that contains default values for all settings other than
     /// - id: A string to identify the device connecting to a broker
     /// - host: The broker's domain name or IP address
@@ -363,7 +363,7 @@ impl MqttOptions {
     /// # use rumqttc::MqttOptions;
     /// let options = MqttOptions::new("", "localhost", 1883);
     /// ```
-    pub fn new<S: Into<String>, T: Into<String>>(id: S, host: T, port: u16) -> MqttOptions {
+    pub fn new<S: Into<String>, T: Into<String>>(id: S, host: T, port: u16) -> MqttOptions<L> {
         let id = id.into();
         assert!(!(id.starts_with(' ') || id.is_empty()), "Invalid client id");
 
@@ -398,7 +398,7 @@ impl MqttOptions {
     ///
     /// NOTE: A url must be prefixed with one of either `tcp://`, `mqtt://`, `ssl://`,`mqtts://`,
     /// `ws://` or `wss://` to denote the protocol for establishing a connection with the broker.
-    pub fn parse_url<S: Into<String>>(url: S) -> Result<MqttOptions, OptionError> {
+    pub fn parse_url<S: Into<String>>(url: S) -> Result<MqttOptions<L>, OptionError> {
         use std::convert::TryFrom;
 
         let url = url::Url::parse(&url.into())?;
@@ -412,12 +412,12 @@ impl MqttOptions {
         (self.broker_addr.clone(), self.port)
     }
 
-    pub fn set_last_will(&mut self, will: LastWill) -> &mut Self {
+    pub fn set_last_will(&mut self, will: L) -> &mut Self {
         self.last_will = Some(will);
         self
     }
 
-    pub fn last_will(&self) -> Option<LastWill> {
+    pub fn last_will(&self) -> Option<L> {
         self.last_will.clone()
     }
 
@@ -550,6 +550,10 @@ impl MqttOptions {
     }
 }
 
+mod v4 {
+    pub type MqttOptions = crate::MqttOptions<crate::LastWill>;
+}
+
 #[cfg(feature = "url")]
 #[derive(Debug, PartialEq, thiserror::Error)]
 pub enum OptionError {
@@ -594,7 +598,7 @@ pub enum OptionError {
 }
 
 #[cfg(feature = "url")]
-impl std::convert::TryFrom<url::Url> for MqttOptions {
+impl<L: Clone> std::convert::TryFrom<url::Url> for MqttOptions<L> {
     type Error = OptionError;
 
     fn try_from(url: url::Url) -> Result<Self, Self::Error> {
@@ -725,7 +729,7 @@ impl std::convert::TryFrom<url::Url> for MqttOptions {
 
 // Implement Debug manually because ClientConfig doesn't implement it, so derive(Debug) doesn't
 // work.
-impl Debug for MqttOptions {
+impl<L: Clone + Debug> Debug for MqttOptions<L> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.debug_struct("MqttOptions")
             .field("broker_addr", &self.broker_addr)
@@ -749,6 +753,9 @@ impl Debug for MqttOptions {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    // create a dummy type to test MqttOptions
+    type MqttOptions = super::MqttOptions<bool>;
 
     #[test]
     #[should_panic]

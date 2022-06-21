@@ -1,7 +1,7 @@
 //! This module offers a high level synchronous and asynchronous abstraction to
 //! async eventloop.
 use crate::mqttbytes::{self, v4::*, QoS};
-use crate::{ConnectionError, Event, EventLoop, MqttOptions, Request};
+use crate::{v4::MqttOptions, ConnectionError, Event, EventLoop, Request};
 
 use bytes::Bytes;
 use flume::{SendError, Sender, TrySendError};
