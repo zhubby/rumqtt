@@ -354,13 +354,13 @@ impl<L: Clone> MqttOptions<L> {
     /// - port: The port number on which broker must be listening for incoming connections
     ///
     /// ```
-    /// # use rumqttc::MqttOptions;
+    /// # type MqttOptions = rumqttc::MqttOptions<bool>;
     /// let options = MqttOptions::new("123", "localhost", 1883);
     /// ```
     /// NOTE: you are not allowed to use an id that starts with a whitespace or is empty.
     /// for example, the following code would panic:
     /// ```should_panic
-    /// # use rumqttc::MqttOptions;
+    /// # type MqttOptions = rumqttc::MqttOptions<bool>;
     /// let options = MqttOptions::new("", "localhost", 1883);
     /// ```
     pub fn new<S: Into<String>, T: Into<String>>(id: S, host: T, port: u16) -> MqttOptions<L> {
@@ -392,7 +392,7 @@ impl<L: Clone> MqttOptions<L> {
     /// [`Url::parse(url)`](url::Url::parse) method and is only enabled when run using the "url" feature.
     ///
     /// ```
-    /// # use rumqttc::MqttOptions;
+    /// # type MqttOptions = rumqttc::MqttOptions<bool>;
     /// let options = MqttOptions::parse_url("mqtt://example.com:1883?client_id=123").unwrap();
     /// ```
     ///
@@ -752,8 +752,6 @@ impl<L: Clone + Debug> Debug for MqttOptions<L> {
 
 #[cfg(test)]
 mod test {
-    use super::*;
-
     // create a dummy type to test MqttOptions
     type MqttOptions = super::MqttOptions<bool>;
 
@@ -766,6 +764,8 @@ mod test {
     #[test]
     #[cfg(all(feature = "use-rustls", feature = "websocket"))]
     fn no_scheme() {
+        use crate::TlsConfiguration;
+
         let mut mqttoptions = MqttOptions::new("client_a", "a3f8czas.iot.eu-west-1.amazonaws.com/mqtt?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=MyCreds%2F20201001%2Feu-west-1%2Fiotdevicegateway%2Faws4_request&X-Amz-Date=20201001T130812Z&X-Amz-Expires=7200&X-Amz-Signature=9ae09b49896f44270f2707551581953e6cac71a4ccf34c7c3415555be751b2d1&X-Amz-SignedHeaders=host", 443);
 
         mqttoptions.set_transport(crate::Transport::wss(Vec::from("Test CA"), None, None));
@@ -789,6 +789,10 @@ mod test {
     #[test]
     #[cfg(feature = "url")]
     fn from_url() {
+        use std::time::Duration;
+
+        use crate::OptionError;
+
         fn opt(s: &str) -> Result<MqttOptions, OptionError> {
             MqttOptions::parse_url(s)
         }
