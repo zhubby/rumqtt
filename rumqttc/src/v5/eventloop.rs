@@ -1,10 +1,11 @@
+use crate::mqttbytes;
 #[cfg(feature = "use-rustls")]
 use crate::v5::tls;
 use crate::v5::{
-    framed::Network, outgoing_buf::OutgoingBuf, packet::*, Incoming, MqttOptions, MqttState,
-    Packet, Request, StateError,
+    outgoing_buf::OutgoingBuf, packet::*, Incoming, MqttOptions, MqttState, Packet, Request,
+    StateError,
 };
-use crate::Transport;
+use crate::{framed::Network, Transport};
 
 #[cfg(feature = "websocket")]
 use async_tungstenite::tokio::{connect_async, connect_async_with_tls_connector};
@@ -149,7 +150,7 @@ impl EventLoop {
         loop {
             select! {
                 // Pull a bunch of packets from network, reply in bunch and yield the first item
-                o = network.readb(&mut self.state) => {
+                o = self.state.readb(network) => {
                     o?;
                     // flush all the acks and return first incoming packet
                     network.flush(&mut self.state.write).await?;
@@ -329,7 +330,7 @@ async fn mqtt_connect(
 
     // wait for 'timeout' time to validate connack
     let packet = time::timeout(Duration::from_secs(options.connection_timeout()), async {
-        let packet = match network.read().await? {
+        let packet = match read_network(network).await? {
             Incoming::ConnAck(connack) if connack.code == ConnectReturnCode::Success => {
                 Packet::ConnAck(connack)
             }
@@ -348,6 +349,20 @@ async fn mqtt_connect(
     .await??;
 
     Ok(packet)
+}
+
+pub async fn read_network(network: &mut Network) -> io::Result<Incoming> {
+    loop {
+        let required = match mqttbytes::v5::read(&mut network.read, network.max_incoming_size) {
+            Ok(packet) => return Ok(packet),
+            Err(mqttbytes::Error::InsufficientBytes(required)) => required,
+            Err(e) => return Err(io::Error::new(io::ErrorKind::InvalidData, e.to_string())),
+        };
+
+        // read more packets until a frame can be created. This function
+        // blocks until a frame can be created. Use this in a select! branch
+        network.read_bytes(required).await?;
+    }
 }
 
 /// Returns the next pending packet asynchronously to be used in select!

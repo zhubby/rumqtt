@@ -346,3 +346,7 @@ fn read_u32(stream: &mut Bytes) -> Result<u32, Error> {
 
     Ok(stream.get_u32())
 }
+
+pub trait WritePacket {
+    fn write(&self, buffer: &mut BytesMut) -> Result<usize, Error>;
+}

@@ -2,7 +2,7 @@ use crate::framed::Network;
 #[cfg(feature = "use-rustls")]
 use crate::tls;
 use crate::v4::MqttOptions;
-use crate::{Incoming, MqttState, Outgoing, Packet, Request, StateError, Transport};
+use crate::{mqttbytes, Incoming, MqttState, Outgoing, Packet, Request, StateError, Transport};
 
 use crate::mqttbytes::v4::*;
 #[cfg(feature = "websocket")]
@@ -171,7 +171,7 @@ impl EventLoop {
         // instead of returning a None event, we try again.
         select! {
             // Pull a bunch of packets from network, reply in bunch and yield the first item
-            o = network.readb(&mut self.state) => {
+            o = self.state.readb(network) => {
                 o?;
                 // flush all the acks and return first incoming packet
                 network.flush(&mut self.state.write).await?;
@@ -353,7 +353,7 @@ async fn mqtt_connect(
 
     // wait for 'timeout' time to validate connack
     let packet = time::timeout(Duration::from_secs(options.connection_timeout()), async {
-        match network.read().await? {
+        match read_network(network).await? {
             Incoming::ConnAck(connack) if connack.code == ConnectReturnCode::Success => {
                 Ok(Packet::ConnAck(connack))
             }
@@ -364,6 +364,20 @@ async fn mqtt_connect(
     .await??;
 
     Ok(packet)
+}
+
+pub async fn read_network(network: &mut Network) -> io::Result<Incoming> {
+    loop {
+        let required = match mqttbytes::v4::read(&mut network.read, network.max_incoming_size) {
+            Ok(packet) => return Ok(packet),
+            Err(mqttbytes::Error::InsufficientBytes(required)) => required,
+            Err(e) => return Err(io::Error::new(io::ErrorKind::InvalidData, e.to_string())),
+        };
+
+        // read more packets until a frame can be created. This function
+        // blocks until a frame can be created. Use this in a select! branch
+        network.read_bytes(required).await?;
+    }
 }
 
 /// Returns the next pending packet asynchronously to be used in select!

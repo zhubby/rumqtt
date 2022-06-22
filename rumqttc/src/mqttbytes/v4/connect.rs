@@ -97,8 +97,10 @@ impl Connect {
 
         Ok(connect)
     }
+}
 
-    pub fn write(&self, buffer: &mut BytesMut) -> Result<usize, Error> {
+impl WritePacket for Connect {
+    fn write(&self, buffer: &mut BytesMut) -> Result<usize, Error> {
         let len = self.len();
         buffer.put_u8(0b0001_0000);
         let count = write_remaining_length(buffer, len)?;

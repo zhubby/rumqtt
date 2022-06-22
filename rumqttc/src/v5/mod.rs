@@ -2,7 +2,6 @@ use std::collections::VecDeque;
 
 mod client;
 mod eventloop;
-mod framed;
 mod notifier;
 mod outgoing_buf;
 mod state;

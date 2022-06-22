@@ -7,7 +7,8 @@ use std::{
 
 use bytes::BytesMut;
 
-use crate::mqttbytes::{v5::*, QoS};
+use crate::framed::Network;
+use crate::mqttbytes::{self, v5::*, QoS};
 use crate::v5::{outgoing_buf::OutgoingBuf, Incoming, Request};
 
 /// Errors during state handling
@@ -135,6 +136,31 @@ impl MqttState {
     #[inline]
     pub fn cur_pkid(&self) -> u16 {
         self.outgoing_buf.lock().unwrap().pkid_counter
+    }
+
+    /// Read packets in bulk. This allow replies to be in bulk. This method is used
+    /// after the connection is established to read a bunch of incoming packets
+    pub async fn readb(&mut self, network: &mut Network) -> Result<(), StateError> {
+        let mut count = 0;
+        loop {
+            match read(&mut network.read, network.max_incoming_size) {
+                Ok(packet) => {
+                    self.handle_incoming_packet(packet)?;
+
+                    count += 1;
+                    if count >= network.max_readb_count {
+                        return Ok(());
+                    }
+                }
+                // If some packets are already framed, return those
+                Err(mqttbytes::Error::InsufficientBytes(_)) if count > 0 => return Ok(()),
+                // Wait for more bytes until a frame can be created
+                Err(mqttbytes::Error::InsufficientBytes(required)) => {
+                    network.read_bytes(required).await?;
+                }
+                Err(e) => return Err(StateError::Deserialization(e)),
+            };
+        }
     }
 
     /// Consolidates handling of all outgoing mqtt packet logic. Returns a packet which should
