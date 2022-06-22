@@ -105,6 +105,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 mod client;
+mod connection;
 mod eventloop;
 mod framed;
 pub mod mqttbytes;
@@ -113,7 +114,8 @@ mod state;
 mod tls;
 pub mod v5;
 
-pub use client::{AsyncClient, Client, ClientError, Connection};
+pub use client::{AsyncClient, Client, ClientError};
+pub use connection::Connection;
 pub use eventloop::{Event, EventLoop};
 pub use flume::{SendError, Sender, TrySendError};
 pub use mqttbytes::v4::*;
@@ -374,6 +376,13 @@ pub enum ConnectionError {
     Cancel,
     #[error("Stream done")]
     StreamDone,
+}
+
+#[async_trait::async_trait]
+pub trait NextEvent {
+    type Output;
+
+    async fn next(&mut self) -> Result<Self::Output, ConnectionError>;
 }
 
 // TODO: Should all the options be exposed as public? Drawback

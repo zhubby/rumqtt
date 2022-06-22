@@ -1,13 +1,12 @@
 //! This module offers a high level synchronous and asynchronous abstraction to
 //! async eventloop.
 use crate::mqttbytes::{self, v4::*, QoS};
-use crate::{v4::MqttOptions, ConnectionError, Event, EventLoop, Request};
+use crate::Connection;
+use crate::{v4::MqttOptions, EventLoop, Request};
 
 use bytes::Bytes;
 use flume::{SendError, Sender, TrySendError};
-use std::mem;
 use tokio::runtime;
-use tokio::runtime::Runtime;
 
 /// Client Error
 #[derive(Debug, thiserror::Error)]
@@ -224,7 +223,7 @@ pub struct Client {
 
 impl Client {
     /// Create a new `Client`
-    pub fn new(options: MqttOptions, cap: usize) -> (Client, Connection) {
+    pub fn new(options: MqttOptions, cap: usize) -> (Client, Connection<EventLoop>) {
         let (client, eventloop) = AsyncClient::new(options, cap);
         let client = Client { client };
         let runtime = runtime::Builder::new_current_thread()
@@ -338,68 +337,5 @@ impl Client {
     pub fn cancel(&mut self) -> Result<(), ClientError> {
         pollster::block_on(self.client.cancel())?;
         Ok(())
-    }
-}
-
-///  MQTT connection. Maintains all the necessary state
-pub struct Connection {
-    pub eventloop: EventLoop,
-    runtime: Option<Runtime>,
-}
-
-impl Connection {
-    fn new(eventloop: EventLoop, runtime: Runtime) -> Connection {
-        Connection {
-            eventloop,
-            runtime: Some(runtime),
-        }
-    }
-
-    /// Returns an iterator over this connection. Iterating over this is all that's
-    /// necessary to make connection progress and maintain a robust connection.
-    /// Just continuing to loop will reconnect
-    /// **NOTE** Don't block this while iterating
-    #[must_use = "Connection should be iterated over a loop to make progress"]
-    pub fn iter(&mut self) -> Iter {
-        let runtime = self.runtime.take().unwrap();
-        Iter {
-            connection: self,
-            runtime,
-        }
-    }
-}
-
-/// Iterator which polls the eventloop for connection progress
-pub struct Iter<'a> {
-    connection: &'a mut Connection,
-    runtime: runtime::Runtime,
-}
-
-impl<'a> Iterator for Iter<'a> {
-    type Item = Result<Event, ConnectionError>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let f = self.connection.eventloop.poll();
-        match self.runtime.block_on(f) {
-            Ok(v) => Some(Ok(v)),
-            // closing of request channel should stop the iterator
-            Err(ConnectionError::RequestsDone) => {
-                trace!("Done with requests");
-                None
-            }
-            Err(ConnectionError::Cancel) => {
-                trace!("Cancellation request received");
-                None
-            }
-            Err(e) => Some(Err(e)),
-        }
-    }
-}
-
-impl<'a> Drop for Iter<'a> {
-    fn drop(&mut self) {
-        // TODO: Don't create new runtime in drop
-        let runtime = runtime::Builder::new_current_thread().build().unwrap();
-        self.connection.runtime = Some(mem::replace(&mut self.runtime, runtime));
     }
 }

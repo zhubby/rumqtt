@@ -4,7 +4,7 @@ use crate::v5::{
     outgoing_buf::OutgoingBuf, packet::*, Incoming, MqttOptions, MqttState, Packet, Request,
 };
 use crate::{framed::Network, Transport};
-use crate::{mqttbytes, ConnectionError};
+use crate::{mqttbytes, ConnectionError, NextEvent};
 
 #[cfg(feature = "websocket")]
 use async_tungstenite::tokio::{connect_async, connect_async_with_tls_connector};
@@ -46,6 +46,15 @@ pub struct EventLoop {
     pub(crate) network: Option<Network>,
     /// Keep alive time
     pub(crate) keepalive_timeout: Option<Pin<Box<Sleep>>>,
+}
+
+#[async_trait::async_trait]
+impl NextEvent for EventLoop {
+    type Output = ();
+
+    async fn next(&mut self) -> Result<(), ConnectionError> {
+        self.poll().await
+    }
 }
 
 impl EventLoop {

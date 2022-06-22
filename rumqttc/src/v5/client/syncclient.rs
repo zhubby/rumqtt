@@ -3,9 +3,9 @@ use tokio::runtime;
 use crate::v5::{
     client::get_ack_req,
     packet::{Publish, Subscribe, SubscribeFilter, Unsubscribe},
-    AsyncClient, ClientError, Connection, MqttOptions, Request,
+    AsyncClient, ClientError, EventLoop, MqttOptions, Request,
 };
-use crate::QoS;
+use crate::{Connection, QoS};
 
 /// `Client` to communicate with MQTT eventloop `Connection`.
 ///
@@ -17,7 +17,7 @@ pub struct Client {
 
 impl Client {
     /// Create a new `Client`
-    pub fn new(options: MqttOptions, cap: usize) -> (Client, Connection) {
+    pub fn new(options: MqttOptions, cap: usize) -> (Client, Connection<EventLoop>) {
         let (client, eventloop) = AsyncClient::new(options, cap);
         let client = Client { client };
         let runtime = runtime::Builder::new_current_thread()

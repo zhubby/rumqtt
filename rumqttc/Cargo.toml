@@ -19,6 +19,7 @@ websocket = ["async-tungstenite", "ws_stream_tungstenite"]
 use-rustls = ["tokio-rustls", "rustls-pemfile"]
 
 [dependencies]
+async-trait = "0.1"
 async-tungstenite = { version = "0.16", default-features = false, features = ["tokio-rustls-native-certs"], optional = true }
 bytes = "1"
 flume = "0.10"

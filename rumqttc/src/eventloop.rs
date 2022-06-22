@@ -3,10 +3,10 @@ use crate::framed::Network;
 use crate::tls;
 use crate::v4::MqttOptions;
 use crate::{
-    mqttbytes, ConnectionError, Incoming, MqttState, Outgoing, Packet, Request, Transport,
+    ConnectionError, Incoming, MqttState, NextEvent, Outgoing, Packet, Request, Transport,
 };
 
-use crate::mqttbytes::v4::*;
+use crate::mqttbytes::{self, v4::*};
 #[cfg(feature = "websocket")]
 use async_tungstenite::tokio::connect_async;
 #[cfg(all(feature = "use-rustls", feature = "websocket"))]
@@ -54,6 +54,15 @@ pub struct EventLoop {
 pub enum Event {
     Incoming(Incoming),
     Outgoing(Outgoing),
+}
+
+#[async_trait::async_trait]
+impl NextEvent for EventLoop {
+    type Output = Event;
+
+    async fn next(&mut self) -> Result<Self::Output, ConnectionError> {
+        self.poll().await
+    }
 }
 
 impl EventLoop {
