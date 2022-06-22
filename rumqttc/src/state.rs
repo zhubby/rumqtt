@@ -1,40 +1,11 @@
 use crate::framed::Network;
-use crate::{Event, Incoming, Outgoing, Request};
+use crate::{Event, Incoming, Outgoing, Request, StateError};
 
 use crate::mqttbytes::v4::*;
 use crate::mqttbytes::{self, *};
 use bytes::BytesMut;
 use std::collections::VecDeque;
-use std::{io, time::Instant};
-
-/// Errors during state handling
-#[derive(Debug, thiserror::Error)]
-pub enum StateError {
-    /// Io Error while state is passed to network
-    #[error("Io error: {0:?}")]
-    Io(#[from] io::Error),
-    /// Broker's error reply to client's connect packet
-    #[error("Connect return code: `{0:?}`")]
-    Connect(ConnectReturnCode),
-    /// Invalid state for a given operation
-    #[error("Invalid state for a given operation")]
-    InvalidState,
-    /// Received a packet (ack) which isn't asked for
-    #[error("Received unsolicited ack pkid: {0}")]
-    Unsolicited(u16),
-    /// Last pingreq isn't acked
-    #[error("Last pingreq isn't acked")]
-    AwaitPingResp,
-    /// Received a wrong packet while waiting for another packet
-    #[error("Received a wrong packet while waiting for another packet")]
-    WrongPacket,
-    #[error("Timeout while waiting to resolve collision")]
-    CollisionTimeout,
-    #[error("A Subscribe packet must contain atleast one filter")]
-    EmptySubscription,
-    #[error("Mqtt serialization/deserialization error: {0}")]
-    Deserialization(#[from] mqttbytes::Error),
-}
+use std::time::Instant;
 
 /// State of the mqtt connection.
 // Design: Methods will just modify the state of the object without doing any network operations

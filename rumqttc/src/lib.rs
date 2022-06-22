@@ -114,13 +114,11 @@ mod tls;
 pub mod v5;
 
 pub use client::{AsyncClient, Client, ClientError, Connection};
-pub use eventloop::{ConnectionError, Event, EventLoop};
+pub use eventloop::{Event, EventLoop};
 pub use flume::{SendError, Sender, TrySendError};
 pub use mqttbytes::v4::*;
 pub use mqttbytes::*;
-pub use state::{MqttState, StateError};
-#[cfg(feature = "use-rustls")]
-pub use tls::Error as TlsError;
+pub use state::MqttState;
 #[cfg(feature = "use-rustls")]
 pub use tokio_rustls::rustls::ClientConfig;
 
@@ -300,6 +298,82 @@ impl From<ClientConfig> for TlsConfiguration {
     fn from(config: ClientConfig) -> Self {
         TlsConfiguration::Rustls(Arc::new(config))
     }
+}
+
+#[cfg(feature = "use-rustls")]
+#[derive(Debug, thiserror::Error)]
+pub enum TlsError {
+    #[error("Addr")]
+    Addr(#[from] std::net::AddrParseError),
+    #[error("I/O: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("Web Pki: {0}")]
+    WebPki(#[from] tokio_rustls::webpki::Error),
+    #[error("DNS name")]
+    DNSName(#[from] tokio_rustls::rustls::client::InvalidDnsNameError),
+    #[error("TLS error: {0}")]
+    TLS(#[from] tokio_rustls::rustls::Error),
+    #[error("No valid cert in chain")]
+    NoValidCertInChain,
+}
+
+/// Errors during state handling
+#[derive(Debug, thiserror::Error)]
+pub enum StateError {
+    /// Io Error while state is passed to network
+    #[error("Io error: {0:?}")]
+    Io(#[from] std::io::Error),
+    /// Broker's error reply to client's connect packet
+    #[error("Connect return code: `{0:?}`")]
+    Connect(ConnectReturnCode),
+    /// Invalid state for a given operation
+    #[error("Invalid state for a given operation")]
+    InvalidState,
+    /// Received a packet (ack) which isn't asked for
+    #[error("Received unsolicited ack pkid: {0}")]
+    Unsolicited(u16),
+    /// Last pingreq isn't acked
+    #[error("Last pingreq isn't acked")]
+    AwaitPingResp,
+    /// Received a wrong packet while waiting for another packet
+    #[error("Received a wrong packet while waiting for another packet")]
+    WrongPacket,
+    #[error("Timeout while waiting to resolve collision")]
+    CollisionTimeout,
+    #[error("A Subscribe packet must contain atleast one filter")]
+    EmptySubscription,
+    #[error("Mqtt serialization/deserialization error: {0}")]
+    Deserialization(#[from] mqttbytes::Error),
+}
+
+/// Critical errors during eventloop polling
+#[derive(Debug, thiserror::Error)]
+pub enum ConnectionError {
+    #[error("Mqtt state: {0}")]
+    MqttState(#[from] StateError),
+    #[error("Timeout")]
+    Timeout(#[from] tokio::time::error::Elapsed),
+    #[cfg(feature = "websocket")]
+    #[error("Websocket: {0}")]
+    Websocket(#[from] async_tungstenite::tungstenite::error::Error),
+    #[cfg(feature = "websocket")]
+    #[error("Websocket Connect: {0}")]
+    WsConnect(#[from] http::Error),
+    #[cfg(feature = "use-rustls")]
+    #[error("TLS: {0}")]
+    Tls(#[from] TlsError),
+    #[error("I/O: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("Connection refused, return code: {0:?}")]
+    ConnectionRefused(ConnectReturnCode),
+    #[error("Expected ConnAck packet, received: {0:?}")]
+    NotConnAck(Packet),
+    #[error("Requests done")]
+    RequestsDone,
+    #[error("Cancel request by the user")]
+    Cancel,
+    #[error("Stream done")]
+    StreamDone,
 }
 
 // TODO: Should all the options be exposed as public? Drawback

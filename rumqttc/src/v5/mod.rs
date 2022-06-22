@@ -5,16 +5,12 @@ mod eventloop;
 mod notifier;
 mod outgoing_buf;
 mod state;
-#[cfg(feature = "use-rustls")]
-mod tls;
 
-pub use client::{AsyncClient, Client, ClientError, Connection};
-pub use eventloop::{ConnectionError, EventLoop};
+pub use client::{AsyncClient, Client, ClientError};
+pub use eventloop::EventLoop;
 pub use flume::{SendError, Sender, TrySendError};
 pub use notifier::Notifier;
-pub use state::{MqttState, StateError};
-#[cfg(feature = "use-rustls")]
-pub use tls::Error;
+pub use state::MqttState;
 #[cfg(feature = "use-rustls")]
 pub use tokio_rustls::rustls::ClientConfig;
 

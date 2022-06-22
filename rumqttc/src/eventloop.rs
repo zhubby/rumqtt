@@ -2,7 +2,9 @@ use crate::framed::Network;
 #[cfg(feature = "use-rustls")]
 use crate::tls;
 use crate::v4::MqttOptions;
-use crate::{mqttbytes, Incoming, MqttState, Outgoing, Packet, Request, StateError, Transport};
+use crate::{
+    mqttbytes, ConnectionError, Incoming, MqttState, Outgoing, Packet, Request, Transport,
+};
 
 use crate::mqttbytes::v4::*;
 #[cfg(feature = "websocket")]
@@ -14,7 +16,7 @@ use tokio::net::TcpStream;
 #[cfg(unix)]
 use tokio::net::UnixStream;
 use tokio::select;
-use tokio::time::{self, error::Elapsed, Instant, Sleep};
+use tokio::time::{self, Instant, Sleep};
 #[cfg(feature = "websocket")]
 use ws_stream_tungstenite::WsStream;
 
@@ -24,34 +26,6 @@ use std::path::Path;
 use std::pin::Pin;
 use std::time::Duration;
 use std::vec::IntoIter;
-
-/// Critical errors during eventloop polling
-#[derive(Debug, thiserror::Error)]
-pub enum ConnectionError {
-    #[error("Mqtt state: {0}")]
-    MqttState(#[from] StateError),
-    #[error("Timeout")]
-    Timeout(#[from] Elapsed),
-    #[cfg(feature = "websocket")]
-    #[error("Websocket: {0}")]
-    Websocket(#[from] async_tungstenite::tungstenite::error::Error),
-    #[cfg(feature = "websocket")]
-    #[error("Websocket Connect: {0}")]
-    WsConnect(#[from] http::Error),
-    #[cfg(feature = "use-rustls")]
-    #[error("TLS: {0}")]
-    Tls(#[from] tls::Error),
-    #[error("I/O: {0}")]
-    Io(#[from] io::Error),
-    #[error("Connection refused, return code: {0:?}")]
-    ConnectionRefused(ConnectReturnCode),
-    #[error("Expected ConnAck packet, received: {0:?}")]
-    NotConnAck(Packet),
-    #[error("Requests done")]
-    RequestsDone,
-    #[error("Cancel request by the user")]
-    Cancel,
-}
 
 /// Eventloop with all the state of a connection
 pub struct EventLoop {

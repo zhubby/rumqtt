@@ -1,44 +1,17 @@
 use tokio::net::TcpStream;
-use tokio_rustls::rustls;
-use tokio_rustls::rustls::client::InvalidDnsNameError;
 use tokio_rustls::rustls::{
     Certificate, ClientConfig, OwnedTrustAnchor, PrivateKey, RootCertStore, ServerName,
 };
 use tokio_rustls::webpki;
 use tokio_rustls::{client::TlsStream, TlsConnector};
 
-use crate::{v4::MqttOptions, Key, TlsConfiguration};
+use crate::{Key, MqttOptions, TlsConfiguration, TlsError};
 
 use std::convert::TryFrom;
-use std::io;
 use std::io::{BufReader, Cursor};
-use std::net::AddrParseError;
 use std::sync::Arc;
 
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("Addr")]
-    Addr(#[from] AddrParseError),
-    #[error("I/O: {0}")]
-    Io(#[from] io::Error),
-    #[error("Web Pki: {0}")]
-    WebPki(#[from] webpki::Error),
-    #[error("DNS name")]
-    DNSName(#[from] InvalidDnsNameError),
-    #[error("TLS error: {0}")]
-    TLS(#[from] rustls::Error),
-    #[error("No valid cert in chain")]
-    NoValidCertInChain,
-}
-
-// The cert handling functions return unit right now, this is a shortcut
-impl From<()> for Error {
-    fn from(_: ()) -> Self {
-        Error::NoValidCertInChain
-    }
-}
-
-pub async fn tls_connector(tls_config: &TlsConfiguration) -> Result<TlsConnector, Error> {
+pub async fn tls_connector(tls_config: &TlsConfiguration) -> Result<TlsConnector, TlsError> {
     let config = match tls_config {
         TlsConfiguration::Simple {
             ca,
@@ -64,7 +37,7 @@ pub async fn tls_connector(tls_config: &TlsConfiguration) -> Result<TlsConnector
             root_cert_store.add_server_trust_anchors(trust_anchors);
 
             if root_cert_store.is_empty() {
-                return Err(Error::NoValidCertInChain);
+                return Err(TlsError::NoValidCertInChain);
             }
 
             let config = ClientConfig::builder()
@@ -87,13 +60,13 @@ pub async fn tls_connector(tls_config: &TlsConfiguration) -> Result<TlsConnector
                 };
                 let keys = match read_keys {
                     Ok(v) => v,
-                    Err(_e) => return Err(Error::NoValidCertInChain),
+                    Err(_e) => return Err(TlsError::NoValidCertInChain),
                 };
 
                 // Get the first key. Error if it's not valid
                 let key = match keys.first() {
                     Some(k) => k.clone(),
-                    None => return Err(Error::NoValidCertInChain),
+                    None => return Err(TlsError::NoValidCertInChain),
                 };
 
                 let certs = certs.into_iter().map(Certificate).collect();
@@ -116,10 +89,10 @@ pub async fn tls_connector(tls_config: &TlsConfiguration) -> Result<TlsConnector
     Ok(TlsConnector::from(config))
 }
 
-pub async fn tls_connect(
-    options: &MqttOptions,
+pub async fn tls_connect<L>(
+    options: &MqttOptions<L>,
     tls_config: &TlsConfiguration,
-) -> Result<TlsStream<TcpStream>, Error> {
+) -> Result<TlsStream<TcpStream>, TlsError> {
     let addr = options.broker_addr.as_str();
     let port = options.port;
     let connector = tls_connector(tls_config).await?;

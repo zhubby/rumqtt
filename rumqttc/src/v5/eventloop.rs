@@ -1,11 +1,10 @@
-use crate::mqttbytes;
 #[cfg(feature = "use-rustls")]
-use crate::v5::tls;
+use crate::tls;
 use crate::v5::{
     outgoing_buf::OutgoingBuf, packet::*, Incoming, MqttOptions, MqttState, Packet, Request,
-    StateError,
 };
 use crate::{framed::Network, Transport};
+use crate::{mqttbytes, ConnectionError};
 
 #[cfg(feature = "websocket")]
 use async_tungstenite::tokio::{connect_async, connect_async_with_tls_connector};
@@ -14,7 +13,7 @@ use tokio::net::TcpStream;
 #[cfg(unix)]
 use tokio::net::UnixStream;
 use tokio::select;
-use tokio::time::{self, error::Elapsed, Instant, Sleep};
+use tokio::time::{self, Instant, Sleep};
 #[cfg(feature = "websocket")]
 use ws_stream_tungstenite::WsStream;
 
@@ -28,28 +27,6 @@ use std::{
     time::Duration,
     vec::IntoIter,
 };
-
-/// Critical errors during eventloop polling
-#[derive(Debug, thiserror::Error)]
-pub enum ConnectionError {
-    #[error("Mqtt state: {0}")]
-    MqttState(#[from] StateError),
-    #[error("Timeout")]
-    Timeout(#[from] Elapsed),
-    #[error("Packet parsing error: {0}")]
-    MqttBytes(#[from] crate::mqttbytes::Error),
-    #[cfg(feature = "use-rustls")]
-    #[error("Network: {0}")]
-    Network(#[from] tls::Error),
-    #[error("I/O: {0}")]
-    Io(#[from] io::Error),
-    #[error("Stream done")]
-    StreamDone,
-    #[error("Requests done")]
-    RequestsDone,
-    #[error("Cancel request by the user")]
-    Cancel,
-}
 
 /// Eventloop with all the state of a connection
 pub struct EventLoop {
