@@ -1,10 +1,8 @@
 use crate::framed::Network;
 #[cfg(feature = "use-rustls")]
 use crate::tls;
-use crate::v4::MqttOptions;
-use crate::{
-    ConnectionError, Incoming, MqttState, NextEvent, Outgoing, Packet, Request, Transport,
-};
+use crate::v4::{Incoming, MqttOptions, MqttState, Outgoing, Request};
+use crate::{ConnectionError, NextEvent, Packet, Transport};
 
 use crate::mqttbytes::{self, v4::*};
 #[cfg(feature = "websocket")]

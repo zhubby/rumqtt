@@ -1,4 +1,5 @@
-use rumqttc::{self, Client, LastWill, MqttOptions, QoS};
+use rumqttc::v4::{Client, LastWill};
+use rumqttc::{self, MqttOptions, QoS};
 use std::thread;
 use std::time::Duration;
 

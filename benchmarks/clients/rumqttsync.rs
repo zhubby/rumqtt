@@ -1,4 +1,6 @@
-use rumqttc::{Client, Event, Incoming, MqttOptions, QoS};
+use rumqttc::v4::{Client, Event, Incoming};
+use rumqttc::{MqttOptions, QoS};
+
 use std::error::Error;
 use std::thread;
 use std::time::{Duration, Instant};

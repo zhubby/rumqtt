@@ -1,3 +1,4 @@
+use flume::Sender;
 use matches::assert_matches;
 use std::time::{Duration, Instant};
 use tokio::{task, time};
@@ -5,7 +6,7 @@ use tokio::{task, time};
 mod broker;
 
 use broker::*;
-use rumqttc::*;
+use rumqttc::{v4::*, ConnectionError, QoS, StateError};
 
 async fn start_requests(count: u8, qos: QoS, delay: u64, requests_tx: Sender<Request>) {
     for i in 1..=count {

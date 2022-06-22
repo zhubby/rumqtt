@@ -4,7 +4,8 @@ use std::error::Error;
 #[cfg(feature = "use-rustls")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    use rumqttc::{self, AsyncClient, Event, Incoming, MqttOptions, Transport};
+    use rumqttc::v4::{AsyncClient, Event, Incoming};
+    use rumqttc::{self, MqttOptions, Transport};
     use rustls::ClientConfig;
 
     pretty_env_logger::init();
