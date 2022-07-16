@@ -117,6 +117,7 @@ pub use client::{AsyncClient, Client, ClientError, Connection};
 pub use eventloop::{ConnectionError, Event, EventLoop};
 pub use mqttbytes::v4::*;
 pub use mqttbytes::*;
+use native_tls::Identity;
 pub use state::{MqttState, StateError};
 #[cfg(any(feature = "use-rustls", feature = "use-native-tls"))]
 pub use tls::Error as TlsError;
@@ -296,7 +297,7 @@ pub enum TlsConfiguration {
     /// Injected rustls ClientConfig for TLS, to allow more customisation.
     Rustls(Arc<ClientConfig>),
     #[cfg(feature = "use-native-tls")]
-    Native,
+    Native(Identity),
 }
 
 #[cfg(feature = "use-rustls")]
