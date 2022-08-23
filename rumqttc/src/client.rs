@@ -5,9 +5,11 @@ use crate::{ConnectionError, Event, EventLoop, MqttOptions, Request};
 
 use bytes::Bytes;
 use flume::{SendError, Sender, TrySendError};
+use futures::FutureExt;
 use std::mem;
-use tokio::runtime;
-use tokio::runtime::Runtime;
+use std::time::Duration;
+use tokio::runtime::{self, Runtime};
+use tokio::time::timeout;
 
 /// Client Error
 #[derive(Debug, thiserror::Error)]
@@ -31,11 +33,11 @@ impl From<TrySendError<Request>> for ClientError {
 }
 
 /// An asynchronous client, communicates with MQTT `EventLoop`.
-/// 
+///
 /// This is cloneable and can be used to asynchronously [`publish`](`AsyncClient::publish`),
 /// [`subscribe`](`AsynClient::subscribe`) through the `EventLoop`, which is to be polled parallelly.
 ///
-/// **NOTE**: The `EventLoop` must be regularly polled in order to send, receive and process packets 
+/// **NOTE**: The `EventLoop` must be regularly polled in order to send, receive and process packets
 /// from the broker, i.e. move ahead.
 #[derive(Clone, Debug)]
 pub struct AsyncClient {
@@ -44,7 +46,7 @@ pub struct AsyncClient {
 
 impl AsyncClient {
     /// Create a new `AsyncClient`.
-    /// 
+    ///
     /// `cap` specifies the capacity of the bounded async channel.
     pub fn new(options: MqttOptions, cap: usize) -> (AsyncClient, EventLoop) {
         let eventloop = EventLoop::new(options, cap);
@@ -220,9 +222,9 @@ fn get_ack_req(publish: &Publish) -> Option<Request> {
 /// [`subscribe`](`AsynClient::subscribe`) through the `EventLoop`/`Connection`, which is to be polled in parallel
 /// by iterating over the object returned by [`Connection.iter()`](Connection::iter) in a separate thread.
 ///
-/// **NOTE**: The `EventLoop`/`Connection` must be regularly polled(`.next()` in case of `Connection`) in order 
+/// **NOTE**: The `EventLoop`/`Connection` must be regularly polled(`.next()` in case of `Connection`) in order
 /// to send, receive and process packets from the broker, i.e. move ahead.
-/// 
+///
 /// An asynchronous channel handle can also be extracted if necessary.
 #[derive(Clone)]
 pub struct Client {
@@ -231,7 +233,7 @@ pub struct Client {
 
 impl Client {
     /// Create a new `Client`
-    /// 
+    ///
     /// `cap` specifies the capacity of the bounded async channel.
     pub fn new(options: MqttOptions, cap: usize) -> (Client, Connection) {
         let (client, eventloop) = AsyncClient::new(options, cap);
@@ -372,10 +374,63 @@ impl Connection {
     }
 }
 
+/// Error type returned when unable to
+#[derive(Debug, Eq, PartialEq)]
+pub enum TryRecvError {
+    /// User has closed requests channel
+    Disconnected,
+    /// Did not resolve
+    Empty,
+}
+
 /// Iterator which polls the `EventLoop` for connection progress
 pub struct Iter<'a> {
     connection: &'a mut Connection,
     runtime: runtime::Runtime,
+}
+
+impl<'a> Iter<'a> {
+    pub fn try_recv(&mut self) -> Result<Result<Event, ConnectionError>, TryRecvError> {
+        let f = self.connection.eventloop.poll();
+        match f.now_or_never().ok_or(TryRecvError::Empty)? {
+            Ok(v) => Ok(Ok(v)),
+            // closing of request channel should stop the iterator
+            Err(ConnectionError::RequestsDone) => {
+                trace!("Done with requests");
+                Err(TryRecvError::Disconnected)
+            }
+            Err(e) => Ok(Err(e)),
+        }
+    }
+
+    pub fn recv(&mut self) -> Result<Result<Event, ConnectionError>, TryRecvError> {
+        let f = self.connection.eventloop.poll();
+        match self.runtime.block_on(f) {
+            Ok(v) => Ok(Ok(v)),
+            // closing of request channel should stop the iterator
+            Err(ConnectionError::RequestsDone) => {
+                trace!("Done with requests");
+                Err(TryRecvError::Disconnected)
+            }
+            Err(e) => Ok(Err(e)),
+        }
+    }
+
+    pub fn recv_timeout(
+        &mut self,
+        duration: Duration,
+    ) -> Result<Result<Event, ConnectionError>, TryRecvError> {
+        let f = timeout(duration, self.connection.eventloop.poll());
+        match self.runtime.block_on(f).map_err(|_| TryRecvError::Empty)? {
+            Ok(v) => Ok(Ok(v)),
+            // closing of request channel should stop the iterator
+            Err(ConnectionError::RequestsDone) => {
+                trace!("Done with requests");
+                Err(TryRecvError::Disconnected)
+            }
+            Err(e) => Ok(Err(e)),
+        }
+    }
 }
 
 impl<'a> Iterator for Iter<'a> {

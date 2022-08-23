@@ -25,6 +25,7 @@ flume = "0.10"
 http = "0.2"
 log = "0.4"
 pollster = "0.2"
+futures = "0.3"
 rustls-pemfile = { version = "0.3", optional = true }
 thiserror = "1"
 tokio = { version = "1", features = ["rt", "macros", "io-util", "net", "time"] }
