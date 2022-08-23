@@ -395,28 +395,16 @@ impl Connection {
 
     pub fn try_recv(&mut self) -> Result<Result<Event, ConnectionError>, TryRecvError> {
         let f = self.eventloop.poll();
-        match f.now_or_never().ok_or(TryRecvError::Empty)? {
-            Ok(v) => Ok(Ok(v)),
-            // closing of request channel should stop the iterator
-            Err(ConnectionError::RequestsDone) => {
-                trace!("Done with requests");
-                Err(TryRecvError::Disconnected)
-            }
-            Err(e) => Ok(Err(e)),
-        }
+        let event = f.now_or_never().ok_or(TryRecvError::Empty)?;
+
+        resolve_event(event).ok_or(TryRecvError::Disconnected)
     }
 
     pub fn recv(&mut self) -> Result<Result<Event, ConnectionError>, RecvError> {
         let f = self.eventloop.poll();
-        match self.runtime.as_ref().unwrap().block_on(f) {
-            Ok(v) => Ok(Ok(v)),
-            // closing of request channel should stop the iterator
-            Err(ConnectionError::RequestsDone) => {
-                trace!("Done with requests");
-                Err(RecvError)
-            }
-            Err(e) => Ok(Err(e)),
-        }
+        let event = self.runtime.as_ref().unwrap().block_on(f);
+
+        resolve_event(event).ok_or(RecvError)
     }
 
     pub fn recv_timeout(
@@ -424,21 +412,14 @@ impl Connection {
         duration: Duration,
     ) -> Result<Result<Event, ConnectionError>, RecvTimeoutError> {
         let f = timeout(duration, self.eventloop.poll());
-        match self
+        let event = self
             .runtime
             .as_ref()
             .unwrap()
             .block_on(f)
-            .map_err(|_| RecvTimeoutError::Timeout)?
-        {
-            Ok(v) => Ok(Ok(v)),
-            // closing of request channel should stop the iterator
-            Err(ConnectionError::RequestsDone) => {
-                trace!("Done with requests");
-                Err(RecvTimeoutError::Disconnected)
-            }
-            Err(e) => Ok(Err(e)),
-        }
+            .map_err(|_| RecvTimeoutError::Timeout)?;
+
+        resolve_event(event).ok_or(RecvTimeoutError::Disconnected)
     }
 }
 
@@ -453,15 +434,21 @@ impl<'a> Iterator for Iter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let f = self.connection.eventloop.poll();
-        match self.runtime.block_on(f) {
-            Ok(v) => Some(Ok(v)),
-            // closing of request channel should stop the iterator
-            Err(ConnectionError::RequestsDone) => {
-                trace!("Done with requests");
-                None
-            }
-            Err(e) => Some(Err(e)),
+        let event = self.runtime.block_on(f);
+
+        resolve_event(event)
+    }
+}
+
+fn resolve_event(event: Result<Event, ConnectionError>) -> Option<Result<Event, ConnectionError>> {
+    match event {
+        Ok(v) => Some(Ok(v)),
+        // closing of request channel should stop the iterator
+        Err(ConnectionError::RequestsDone) => {
+            trace!("Done with requests");
+            None
         }
+        Err(e) => Some(Err(e)),
     }
 }
 
