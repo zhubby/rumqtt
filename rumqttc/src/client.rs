@@ -346,6 +346,26 @@ impl Client {
     }
 }
 
+/// Error type returned by [`Connection::try_recv`]
+#[derive(Debug, Eq, PartialEq)]
+pub enum TryRecvError {
+    /// User has closed requests channel
+    Disconnected,
+    /// Did not resolve
+    Empty,
+}
+
+/// Error type returned by [`Connection::recv`]
+#[derive(Debug, Eq, PartialEq)]
+pub struct RecvError;
+
+/// Error type returned by [`Connection::recv_timeout`]
+#[derive(Debug, Eq, PartialEq)]
+pub enum RecvTimeoutError {
+    Timeout,
+    Disconnected,
+}
+
 ///  MQTT connection. Maintains all the necessary state
 pub struct Connection {
     pub eventloop: EventLoop,
@@ -372,26 +392,9 @@ impl Connection {
             runtime,
         }
     }
-}
 
-/// Error type returned when unable to
-#[derive(Debug, Eq, PartialEq)]
-pub enum TryRecvError {
-    /// User has closed requests channel
-    Disconnected,
-    /// Did not resolve
-    Empty,
-}
-
-/// Iterator which polls the `EventLoop` for connection progress
-pub struct Iter<'a> {
-    connection: &'a mut Connection,
-    runtime: runtime::Runtime,
-}
-
-impl<'a> Iter<'a> {
     pub fn try_recv(&mut self) -> Result<Result<Event, ConnectionError>, TryRecvError> {
-        let f = self.connection.eventloop.poll();
+        let f = self.eventloop.poll();
         match f.now_or_never().ok_or(TryRecvError::Empty)? {
             Ok(v) => Ok(Ok(v)),
             // closing of request channel should stop the iterator
@@ -403,14 +406,14 @@ impl<'a> Iter<'a> {
         }
     }
 
-    pub fn recv(&mut self) -> Result<Result<Event, ConnectionError>, TryRecvError> {
-        let f = self.connection.eventloop.poll();
-        match self.runtime.block_on(f) {
+    pub fn recv(&mut self) -> Result<Result<Event, ConnectionError>, RecvError> {
+        let f = self.eventloop.poll();
+        match self.runtime.as_ref().unwrap().block_on(f) {
             Ok(v) => Ok(Ok(v)),
             // closing of request channel should stop the iterator
             Err(ConnectionError::RequestsDone) => {
                 trace!("Done with requests");
-                Err(TryRecvError::Disconnected)
+                Err(RecvError)
             }
             Err(e) => Ok(Err(e)),
         }
@@ -419,18 +422,30 @@ impl<'a> Iter<'a> {
     pub fn recv_timeout(
         &mut self,
         duration: Duration,
-    ) -> Result<Result<Event, ConnectionError>, TryRecvError> {
-        let f = timeout(duration, self.connection.eventloop.poll());
-        match self.runtime.block_on(f).map_err(|_| TryRecvError::Empty)? {
+    ) -> Result<Result<Event, ConnectionError>, RecvTimeoutError> {
+        let f = timeout(duration, self.eventloop.poll());
+        match self
+            .runtime
+            .as_ref()
+            .unwrap()
+            .block_on(f)
+            .map_err(|_| RecvTimeoutError::Timeout)?
+        {
             Ok(v) => Ok(Ok(v)),
             // closing of request channel should stop the iterator
             Err(ConnectionError::RequestsDone) => {
                 trace!("Done with requests");
-                Err(TryRecvError::Disconnected)
+                Err(RecvTimeoutError::Disconnected)
             }
             Err(e) => Ok(Err(e)),
         }
     }
+}
+
+/// Iterator which polls the `EventLoop` for connection progress
+pub struct Iter<'a> {
+    connection: &'a mut Connection,
+    runtime: runtime::Runtime,
 }
 
 impl<'a> Iterator for Iter<'a> {
