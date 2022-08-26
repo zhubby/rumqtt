@@ -11,7 +11,7 @@ mod framed;
 mod notifier;
 mod outgoing_buf;
 #[allow(clippy::all)]
-mod packet;
+pub mod packet;
 mod state;
 #[cfg(feature = "use-rustls")]
 mod tls;
@@ -20,7 +20,8 @@ pub use client::{AsyncClient, Client, ClientError, Connection, Iter};
 pub use eventloop::{ConnectionError, EventLoop};
 pub use flume::{SendError, Sender, TrySendError};
 pub use notifier::Notifier;
-pub use packet::*;
+use packet::*;
+pub use packet::{LastWill, Packet, QoS};
 pub use state::{MqttState, StateError};
 #[cfg(feature = "use-rustls")]
 pub use tls::Error;
