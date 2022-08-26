@@ -7,7 +7,8 @@ use tokio_rustls::rustls::{
 use tokio_rustls::webpki;
 use tokio_rustls::{client::TlsStream, TlsConnector};
 
-use crate::v5::{Key, MqttOptions, TlsConfiguration};
+use crate::v5::MqttOptions;
+use crate::{Key, TlsConfiguration};
 
 use std::convert::TryFrom;
 use std::io;
@@ -120,10 +121,9 @@ pub async fn tls_connect(
     options: &MqttOptions,
     tls_config: &TlsConfiguration,
 ) -> Result<TlsStream<TcpStream>, Error> {
-    let addr = options.broker_addr.as_str();
-    let port = options.port;
+    let (addr, port) = options.broker_address();
     let connector = tls_connector(tls_config).await?;
-    let domain = ServerName::try_from(addr)?;
+    let domain = ServerName::try_from(addr.as_str())?;
     let tcp = TcpStream::connect((addr, port)).await?;
     let tls = connector.connect(domain, tcp).await?;
     Ok(tls)

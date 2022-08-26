@@ -2,8 +2,9 @@
 use crate::v5::tls;
 use crate::v5::{
     framed::Network, outgoing_buf::OutgoingBuf, packet::*, Incoming, MqttOptions, MqttState,
-    Packet, Request, StateError, Transport,
+    Packet, Request, StateError,
 };
+use crate::Transport;
 
 #[cfg(feature = "websocket")]
 use async_tungstenite::tokio::connect_async;
@@ -84,8 +85,8 @@ impl EventLoop {
         let (incoming_tx, incoming_rx) = bounded(1);
         let pending = Vec::new();
         let pending = pending.into_iter();
-        let max_inflight = options.inflight;
-        let manual_acks = options.manual_acks;
+        let max_inflight = options.inflight();
+        let manual_acks = options.manual_acks();
         let state = MqttState::new(max_inflight, manual_acks, cap);
         let outgoing_buf = state.outgoing_buf.clone();
 
@@ -134,7 +135,7 @@ impl EventLoop {
             self.network = Some(network);
 
             if self.keepalive_timeout.is_none() {
-                self.keepalive_timeout = Some(Box::pin(time::sleep(self.options.keep_alive)));
+                self.keepalive_timeout = Some(Box::pin(time::sleep(self.options.keep_alive())));
             }
 
             return Ok(());
@@ -152,8 +153,8 @@ impl EventLoop {
     async fn select(&mut self) -> Result<(), ConnectionError> {
         let network = self.network.as_mut().unwrap();
         // let await_acks = self.state.await_acks;
-        let inflight_full = self.state.inflight >= self.options.inflight;
-        let throttle = self.options.pending_throttle;
+        let inflight_full = self.state.inflight >= self.options.inflight();
+        let throttle = self.options.pending_throttle();
         let pending = self.pending.len() > 0;
         let collision = self.state.collision.is_some();
 
@@ -221,7 +222,7 @@ impl EventLoop {
                 // simple. We can change this behavior in future if necessary (to prevent extra pings)
                 _ = self.keepalive_timeout.as_mut().unwrap() => {
                     let timeout = self.keepalive_timeout.as_mut().unwrap();
-                    timeout.as_mut().reset(Instant::now() + self.options.keep_alive);
+                    timeout.as_mut().reset(Instant::now() + self.options.keep_alive());
 
                     self.state.handle_outgoing_packet(Request::PingReq)?;
                     network.flush(&mut self.state.write).await?;
@@ -255,27 +256,27 @@ async fn connect(options: &MqttOptions) -> Result<(Network, Incoming), Connectio
 async fn network_connect(options: &MqttOptions) -> Result<Network, ConnectionError> {
     let network = match options.transport() {
         Transport::Tcp => {
-            let addr = options.broker_addr.as_str();
-            let port = options.port;
+            let (addr, port) = options.broker_address();
             let socket = TcpStream::connect((addr, port)).await?;
-            Network::new(socket, options.max_incoming_packet_size)
+            Network::new(socket, options.max_packet_size())
         }
         #[cfg(feature = "use-rustls")]
         Transport::Tls(tls_config) => {
             let socket = tls::tls_connect(options, &tls_config).await?;
-            Network::new(socket, options.max_incoming_packet_size)
+            Network::new(socket, options.max_packet_size())
         }
         #[cfg(unix)]
         Transport::Unix => {
-            let file = options.broker_addr.as_str();
-            let socket = UnixStream::connect(Path::new(file)).await?;
-            Network::new(socket, options.max_incoming_packet_size)
+            let (file, _) = options.broker_address();
+            let socket = UnixStream::connect(Path::new(file.as_str())).await?;
+            Network::new(socket, options.max_packet_size())
         }
         #[cfg(feature = "websocket")]
         Transport::Ws => {
+            let (addr, _) = options.broker_address();
             let request = http::Request::builder()
                 .method(http::Method::GET)
-                .uri(options.broker_addr.as_str())
+                .uri(addr)
                 .header("Sec-WebSocket-Protocol", "mqttv3.1")
                 .body(())
                 .unwrap();
@@ -284,13 +285,14 @@ async fn network_connect(options: &MqttOptions) -> Result<Network, ConnectionErr
                 .await
                 .map_err(|e| io::Error::new(io::ErrorKind::ConnectionRefused, e))?;
 
-            Network::new(WsStream::new(socket), options.max_incoming_packet_size)
+            Network::new(WsStream::new(socket), options.max_packet_size())
         }
         #[cfg(all(feature = "websocket", feature = "use-rustls"))]
         Transport::Wss(tls_config) => {
+            let (addr, _) = options.broker_address();
             let request = http::Request::builder()
                 .method(http::Method::GET)
-                .uri(options.broker_addr.as_str())
+                .uri(addr)
                 .header("Sec-WebSocket-Protocol", "mqttv3.1")
                 .body(())
                 .unwrap();
@@ -301,7 +303,7 @@ async fn network_connect(options: &MqttOptions) -> Result<Network, ConnectionErr
                 .await
                 .map_err(|e| io::Error::new(io::ErrorKind::ConnectionRefused, e))?;
 
-            Network::new(WsStream::new(socket), options.max_incoming_packet_size)
+            Network::new(WsStream::new(socket), options.max_packet_size())
         }
     };
 
