@@ -18,7 +18,7 @@ mod tls;
 
 pub use client::{AsyncClient, Client, ClientError, Connection, Iter};
 pub use eventloop::{ConnectionError, EventLoop};
-pub use flume::{SendError, Sender, TrySendError};
+pub use flume;
 pub use notifier::Notifier;
 use packet::*;
 pub use packet::{LastWill, Packet, QoS};
