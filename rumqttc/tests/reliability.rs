@@ -1,3 +1,4 @@
+use flume::Sender;
 use matches::assert_matches;
 use std::time::{Duration, Instant};
 use tokio::{task, time};
