@@ -3,6 +3,18 @@
 [![crates.io page](https://img.shields.io/crates/v/rumqttd.svg)](https://crates.io/crates/rumqttd)
 [![docs.rs page](https://docs.rs/rumqttd/badge.svg)](https://docs.rs/rumqttd)
 
+Rumqttd is a high performance MQTT broker written in Rust. It's light weight and embeddable, meaning
+you can use it as a library in your code and extend functionality
+
+
+## Getting started
+
+```
+cargo run --release -- -c config/rumqqtd.conf
+
+```
+
+
 ## `native-tls` support
 
 This crate, by default uses the `tokio-rustls` crate. There's also support for the `tokio-native-tls` crate.
