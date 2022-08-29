@@ -110,6 +110,7 @@ pub mod mqttbytes;
 mod state;
 #[cfg(feature = "use-rustls")]
 mod tls;
+#[cfg(feature = "v5")]
 pub mod v5;
 
 pub use client::{AsyncClient, Client, ClientError, Connection, Iter};

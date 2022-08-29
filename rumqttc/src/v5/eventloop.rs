@@ -36,8 +36,6 @@ pub enum ConnectionError {
     MqttState(#[from] StateError),
     #[error("Timeout")]
     Timeout(#[from] Elapsed),
-    #[error("Packet parsing error: {0}")]
-    Mqtt5Bytes(Error),
     #[cfg(feature = "use-rustls")]
     #[error("Network: {0}")]
     Network(#[from] tls::Error),
@@ -47,8 +45,6 @@ pub enum ConnectionError {
     ConnectionRefused(ConnectReturnCode),
     #[error("Expected ConnAck packet, received: {0:?}")]
     NotConnAck(Box<Packet>),
-    #[error("Stream done")]
-    StreamDone,
     #[error("Requests done")]
     RequestsDone,
     #[error("MQTT connection has been disconnected")]

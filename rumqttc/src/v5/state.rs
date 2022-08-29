@@ -15,12 +15,6 @@ pub enum StateError {
     /// Io Error while state is passed to network
     #[error("Io error {0:?}")]
     Io(#[from] io::Error),
-    /// Broker's error reply to client's connect packet
-    #[error("Connect return code `{0:?}`")]
-    Connect(ConnectReturnCode),
-    /// Invalid state for a given operation
-    #[error("Invalid state for a given operation")]
-    InvalidState,
     /// Received a packet (ack) which isn't asked for
     #[error("Received unsolicited ack pkid {0}")]
     Unsolicited(u16),
@@ -137,11 +131,7 @@ impl MqttState {
     }
 
     #[inline]
-    pub fn inflight(&self) -> u16 {
-        self.inflight
-    }
-
-    #[inline]
+    #[cfg(test)]
     pub fn cur_pkid(&self) -> u16 {
         self.outgoing_buf.lock().unwrap().pkid_counter
     }
@@ -452,6 +442,7 @@ impl MqttState {
     }
 
     #[inline]
+    #[cfg(test)]
     pub fn increment_pkid(&self) -> u16 {
         self.outgoing_buf.lock().unwrap().increment_pkid()
     }

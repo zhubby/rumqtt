@@ -32,7 +32,7 @@ fn get_ack_req(qos: QoS, pkid: u16) -> Option<Request> {
 
 ///  MQTT connection. Maintains all the necessary state
 pub struct Connection {
-    pub eventloop: EventLoop,
+    eventloop: EventLoop,
     runtime: Option<Runtime>,
 }
 

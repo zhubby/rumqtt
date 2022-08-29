@@ -24,7 +24,7 @@ pub struct AsyncClient {
 
 impl AsyncClient {
     /// Create a new `AsyncClient`
-    pub fn new(options: MqttOptions, cap: usize) -> (AsyncClient, EventLoop) {
+    pub(crate) fn new(options: MqttOptions, cap: usize) -> (AsyncClient, EventLoop) {
         let eventloop = EventLoop::new(options, cap);
         let outgoing_buf = eventloop.state.outgoing_buf.clone();
         let request_tx = eventloop.handle();

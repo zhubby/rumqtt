@@ -18,7 +18,7 @@ pub struct Client {
 
 impl Client {
     /// Create a new `Client`
-    pub fn new(options: MqttOptions, cap: usize) -> (Client, Connection) {
+    pub(crate) fn new(options: MqttOptions, cap: usize) -> (Client, Connection) {
         let (client, eventloop) = AsyncClient::new(options, cap);
         let client = Client { client };
         let runtime = runtime::Builder::new_current_thread()
