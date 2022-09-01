@@ -99,14 +99,16 @@
 extern crate log;
 
 use std::fmt::{self, Debug, Formatter};
-#[cfg(feature = "use-rustls")]
-use std::sync::Arc;
+#[cfg(feature = "quic")]
+use std::net::SocketAddr;
 use std::time::Duration;
 
 mod client;
 mod eventloop;
 mod framed;
 pub mod mqttbytes;
+#[cfg(feature = "quic")]
+mod quic;
 mod state;
 #[cfg(feature = "use-rustls")]
 mod tls;
@@ -117,16 +119,11 @@ pub use eventloop::{ConnectionError, Event, EventLoop};
 pub use flume::{SendError, Sender, TrySendError};
 pub use mqttbytes::v4::*;
 pub use mqttbytes::*;
-#[cfg(feature = "use-rustls")]
-pub use rustls_native_certs::load_native_certs;
 pub use state::{MqttState, StateError};
 #[cfg(feature = "use-rustls")]
-pub use tls::Error as TlsError;
-
+pub use tls::{Error as TlsError, TlsConfiguration};
 #[cfg(feature = "use-rustls")]
 pub use tokio_rustls;
-#[cfg(feature = "use-rustls")]
-use tokio_rustls::rustls::{Certificate, ClientConfig, RootCertStore};
 
 pub type Incoming = Packet;
 
@@ -214,6 +211,9 @@ pub enum Transport {
     #[cfg(all(feature = "use-rustls", feature = "websocket"))]
     #[cfg_attr(docsrs, doc(cfg(all(feature = "use-rustls", feature = "websocket"))))]
     Wss(TlsConfiguration),
+    #[cfg(feature = "quic")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "quic")))]
+    Quic(TlsConfiguration),
 }
 
 impl Default for Transport {
@@ -296,45 +296,6 @@ impl Transport {
     }
 }
 
-/// TLS configuration method
-#[derive(Clone)]
-#[cfg(feature = "use-rustls")]
-pub enum TlsConfiguration {
-    Simple {
-        /// connection method
-        ca: Vec<u8>,
-        /// alpn settings
-        alpn: Option<Vec<Vec<u8>>>,
-        /// tls client_authentication
-        client_auth: Option<(Vec<u8>, Key)>,
-    },
-    /// Injected rustls ClientConfig for TLS, to allow more customisation.
-    Rustls(Arc<ClientConfig>),
-}
-
-#[cfg(feature = "use-rustls")]
-impl Default for TlsConfiguration {
-    fn default() -> Self {
-        let mut root_cert_store = RootCertStore::empty();
-        for cert in load_native_certs().expect("could not load platform certs") {
-            root_cert_store.add(&Certificate(cert.0)).unwrap();
-        }
-        let tls_config = ClientConfig::builder()
-            .with_safe_defaults()
-            .with_root_certificates(root_cert_store)
-            .with_no_client_auth();
-
-        Self::Rustls(Arc::new(tls_config))
-    }
-}
-
-#[cfg(feature = "use-rustls")]
-impl From<ClientConfig> for TlsConfiguration {
-    fn from(config: ClientConfig) -> Self {
-        TlsConfiguration::Rustls(Arc::new(config))
-    }
-}
-
 // TODO: Should all the options be exposed as public? Drawback
 // would be loosing the ability to panic when the user options
 // are wrong (e.g empty client id) or aggressive (keep alive time)
@@ -345,6 +306,9 @@ pub struct MqttOptions {
     broker_addr: String,
     /// broker port
     port: u16,
+    /// broker port
+    #[cfg(feature = "quic")]
+    quic_sock_addr: Option<SocketAddr>,
     // What transport protocol to use
     transport: Transport,
     /// keep alive time to send pingreq to broker when the connection is idle
@@ -405,6 +369,8 @@ impl MqttOptions {
         MqttOptions {
             broker_addr: host.into(),
             port,
+            #[cfg(feature = "quic")]
+            quic_sock_addr: None,
             transport: Transport::tcp(),
             keep_alive: Duration::from_secs(60),
             clean_session: true,
@@ -598,6 +564,13 @@ impl MqttOptions {
     /// get manual acknowledgements
     pub fn manual_acks(&self) -> bool {
         self.manual_acks
+    }
+
+    #[cfg(feature = "quic")]
+    /// set socket address to bind to locally
+    pub fn set_quic_sock_addr(&mut self, sock_addr: SocketAddr) -> &mut Self {
+        self.quic_sock_addr = Some(sock_addr);
+        self
     }
 }
 

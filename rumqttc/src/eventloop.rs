@@ -1,4 +1,6 @@
 use crate::framed::Network;
+#[cfg(feature = "quic")]
+use crate::quic::Quic;
 #[cfg(feature = "use-rustls")]
 use crate::tls;
 use crate::{Incoming, MqttOptions, MqttState, Outgoing, Packet, Request, StateError, Transport};
@@ -37,6 +39,9 @@ pub enum ConnectionError {
     #[cfg(feature = "websocket")]
     #[error("Websocket Connect: {0}")]
     WsConnect(#[from] http::Error),
+    #[cfg(feature = "quic")]
+    #[error("Addr Parse: {0}")]
+    Quic(#[from] crate::quic::QuicError),
     #[cfg(feature = "use-rustls")]
     #[error("TLS: {0}")]
     Tls(#[from] tls::Error),
@@ -280,6 +285,11 @@ async fn network_connect(options: &MqttOptions) -> Result<Network, ConnectionErr
             let (socket, _) = connect_async_with_tls_connector(request, Some(connector)).await?;
 
             Network::new(WsStream::new(socket), options.max_incoming_packet_size)
+        }
+        #[cfg(all(feature = "use-rustls", feature = "quic"))]
+        Transport::Quic(tls_config) => {
+            let quic = Quic::new(options, &tls_config).await?;
+            Network::new(quic, options.max_incoming_packet_size)
         }
     };
 
