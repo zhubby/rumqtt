@@ -1,0 +1,4 @@
+FROM alpine:latest
+COPY ./target/release/rumqttd /usr/local/bin/rumqttd
+ENV RUST_LOG="info"
+ENTRYPOINT ["rumqttd"]
